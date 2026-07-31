@@ -358,6 +358,7 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
           <input
             type="date"
             value={product.expiryDate}
+            min={new Date().toISOString().split('T')[0]}
             onChange={(e) => onUpdate(homeId, product.id, { expiryDate: e.target.value })}
             style={{ ...fieldInput, flex: 1 }}
           />
