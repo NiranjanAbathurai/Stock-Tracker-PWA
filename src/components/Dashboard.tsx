@@ -269,33 +269,36 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
 
 /* ============ Install Banner ============ */
 const InstallBanner = () => {
-  const [show, setShow] = useState(false);
+  const [isStandalone] = useState(() => window.matchMedia('(display-mode: standalone)').matches);
   const [deferredPrompt, setDeferredPrompt] = useState<Event | null>(null);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    // Don't show if already installed as standalone
-    if (window.matchMedia('(display-mode: standalone)').matches) return;
-
+    if (isStandalone) return;
     const handler = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e);
-      setShow(true);
     };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
+  }, [isStandalone]);
 
-  if (!show) return null;
+  // Don't show if standalone or dismissed
+  if (isStandalone || dismissed) return null;
 
   const handleInstall = async () => {
-    if (!deferredPrompt) return;
-    const promptEvent = deferredPrompt as unknown as { prompt: () => void; userChoice: Promise<{ outcome: string }> };
-    promptEvent.prompt();
-    const result = await promptEvent.userChoice;
-    if (result.outcome === 'accepted') {
-      setShow(false);
+    if (deferredPrompt) {
+      const promptEvent = deferredPrompt as unknown as { prompt: () => void; userChoice: Promise<{ outcome: string }> };
+      promptEvent.prompt();
+      const result = await promptEvent.userChoice;
+      if (result.outcome === 'accepted') {
+        setDismissed(true);
+      }
+      setDeferredPrompt(null);
+    } else {
+      // Prompt not available — show instructions
+      alert('To install: Open browser menu (⋮) → "Install app" or "Add to Home Screen"');
     }
-    setDeferredPrompt(null);
   };
 
   return (
@@ -310,7 +313,7 @@ const InstallBanner = () => {
       justifyContent: 'space-between',
       gap: '0.5rem',
     }}>
-      <span style={{ color: '#ccc', fontSize: '0.8rem' }}>📱 Install as app for a better experience</span>
+      <span style={{ color: '#ccc', fontSize: '0.8rem' }}>📱 Install as app for better experience</span>
       <button
         type="button"
         onClick={handleInstall}
