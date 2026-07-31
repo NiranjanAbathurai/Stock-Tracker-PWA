@@ -4,10 +4,30 @@ import { SplashScreen } from './components/SplashScreen';
 import { SignInForm } from './components/SignInForm';
 import { SignUpForm } from './components/SignUpForm';
 import { Dashboard } from './components/Dashboard';
+import { InstallPage } from './components/InstallPage';
 
 export const App = () => {
   const { authState, error, login, logout, clearError } = useAuth();
   const [formMode, setFormMode] = useState<'signin' | 'signup'>('signin');
+
+  // Check if user came from portfolio with ?install=true
+  const [showInstall, setShowInstall] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('install') === 'true';
+  });
+
+  // Show install page if ?install=true
+  if (showInstall) {
+    return (
+      <InstallPage
+        onSkip={() => {
+          // Remove the ?install=true from URL without reload
+          window.history.replaceState({}, '', '/');
+          setShowInstall(false);
+        }}
+      />
+    );
+  }
 
   // Show splash while checking stored credentials
   if (authState === 'loading') {
