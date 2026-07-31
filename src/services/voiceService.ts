@@ -181,8 +181,8 @@ export async function sendVoiceCommand(
 ): Promise<VoiceCommandResponse> {
   const base64Audio = await blobToBase64(audioBlob);
 
-  const apiBase = import.meta.env.VITE_API_BASE_URL || '';
-  const response = await fetch(`${apiBase}/api/stock-tracker/voice-command`, {
+   // Call the PWA's own Netlify function directly
+  const response = await fetch(`/.netlify/functions/voice-command`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

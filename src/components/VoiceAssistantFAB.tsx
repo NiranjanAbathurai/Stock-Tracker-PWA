@@ -125,9 +125,9 @@ export const VoiceAssistantFAB = ({
         aria-label={getAriaLabel(state)}
         style={{
           position: 'fixed',
-          bottom: '24px',
+          bottom: '20px',
           right: '24px',
-          width: '56px',
+          width: '60px',
           height: '56px',
           borderRadius: '50%',
           border: 'none',
