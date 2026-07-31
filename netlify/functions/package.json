@@ -1,0 +1,11 @@
+{
+  "name": "stock-tracker-pwa-functions",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.0",
+    "@emailjs/nodejs": "^4.0.0",
+    "web-push": "^3.6.7",
+    "dotenv": "^16.4.0"
+  }
+}

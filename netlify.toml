@@ -1,0 +1,27 @@
+[build]
+  command = "cd netlify/functions && npm install && cd ../.. && npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Scheduled function for daily expiry notifications
+# Runs at 18:30 UTC = midnight IST
+[functions."expiry-notification"]
+  schedule = "30 18 * * *"
