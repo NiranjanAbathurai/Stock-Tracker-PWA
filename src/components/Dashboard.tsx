@@ -118,7 +118,7 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
         }
 
         // Add each parsed item as a product
-        for (const item of parsedItems) {
+        for (let i = 0; i < parsedItems.length; i++) {
           await addProduct(homeId);
           // The addProduct creates an empty product, we need to update it
           // For simplicity, we'll just alert success
