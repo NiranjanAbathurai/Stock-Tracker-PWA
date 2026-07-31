@@ -29,6 +29,6 @@
   status = 200
 
 # Scheduled function for daily expiry notifications
-# Runs at 18:30 UTC = midnight IST
+# Runs at 18:31 UTC = 12:01 AM IST
 [functions."expiry-notification"]
-  schedule = "30 18 * * *"
+  schedule = "31 18 * * *"
