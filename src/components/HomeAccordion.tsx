@@ -273,7 +273,22 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
         {/* Type of Stock — select dropdown */}
         <select
           value={product.stockType}
-          onChange={(e) => onUpdate(homeId, product.id, { stockType: e.target.value, product: '' })}
+          onChange={(e) => {
+            const newStockType = e.target.value;
+            // Only clear product if it doesn't belong to the newly selected category
+            if (newStockType) {
+              const selectedCat = catalog.find(cat => cat.name === newStockType);
+              const productBelongsToNewCategory = selectedCat?.items.some(
+                item => item.name.toLowerCase() === product.product.toLowerCase()
+              );
+              onUpdate(homeId, product.id, {
+                stockType: newStockType,
+                product: productBelongsToNewCategory ? product.product : ''
+              });
+            } else {
+              onUpdate(homeId, product.id, { stockType: '', product: '' });
+            }
+          }}
           disabled={catalogLoading}
           style={fieldInput}
         >
@@ -281,22 +296,54 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
           {catalog.map((cat) => (
             <option key={cat.id} value={cat.name}>{cat.name}</option>
           ))}
+          {product.stockType === 'Others' && <option value="Others">Others</option>}
         </select>
 
         {/* Product Name — input with datalist */}
         <input
           value={product.product}
-          onChange={(e) => onUpdate(homeId, product.id, { product: e.target.value })}
-          disabled={!product.stockType}
-          placeholder={!product.stockType ? 'Select type first...' : 'Product...'}
+          onChange={(e) => {
+            const newValue = e.target.value;
+            onUpdate(homeId, product.id, { product: newValue });
+            // Auto-detect stock type from product name
+            if (!product.stockType || product.stockType === 'Others') {
+              const matchedCategory = catalog.find(cat =>
+                cat.items.some(item => item.name.toLowerCase() === newValue.toLowerCase())
+              );
+              if (matchedCategory) {
+                onUpdate(homeId, product.id, { product: newValue, stockType: matchedCategory.name });
+              }
+            }
+          }}
+          onBlur={(e) => {
+            const val = e.target.value.trim();
+            if (val && !product.stockType) {
+              // Check if product matches any catalog item
+              const matchedCategory = catalog.find(cat =>
+                cat.items.some(item => item.name.toLowerCase() === val.toLowerCase())
+              );
+              if (matchedCategory) {
+                onUpdate(homeId, product.id, { stockType: matchedCategory.name });
+              } else {
+                // Not in catalog — set as "Others"
+                onUpdate(homeId, product.id, { stockType: 'Others' });
+              }
+            }
+          }}
+          placeholder={product.stockType ? 'Product...' : 'Search all products...'}
           list={`product-list-${product.id}`}
           autoComplete="off"
           style={fieldInput}
         />
         <datalist id={`product-list-${product.id}`}>
-          {productOptions.map((item) => (
-            <option key={item.id} value={item.name} />
-          ))}
+          {product.stockType && product.stockType !== 'Others'
+            ? productOptions.map((item) => (
+                <option key={item.id} value={item.name} />
+              ))
+            : catalog.flatMap(cat => cat.items).map((item) => (
+                <option key={item.id} value={item.name} />
+              ))
+          }
         </datalist>
 
         {/* Quantity + Expiry Date on same row */}

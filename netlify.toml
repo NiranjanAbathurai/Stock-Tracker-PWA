@@ -16,6 +16,13 @@
   [headers.values]
     Content-Type = "application/manifest+json"
 
+# Proxy API requests to the Portfolio app's Netlify functions
+[[redirects]]
+  from = "/api/*"
+  to = "https://niranjan-abathurai-portfolio.netlify.app/api/:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

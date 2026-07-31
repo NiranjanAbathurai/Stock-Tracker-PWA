@@ -99,7 +99,8 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
       const base64Data = base64Image.split(',')[1];
 
       try {
-        const response = await fetch('/api/stock-tracker/parse-bill', {
+        const apiBase = import.meta.env.VITE_API_BASE_URL || '';
+        const response = await fetch(`${apiBase}/api/stock-tracker/parse-bill`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image: base64Data }),
