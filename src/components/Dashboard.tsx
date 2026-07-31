@@ -4,6 +4,7 @@ import { useHomes } from '../hooks/useHomes';
 import { HomeAccordion } from './HomeAccordion';
 import { PushToggle } from './PushToggle';
 import { OfflineBanner } from './OfflineBanner';
+import { VoiceAssistantFAB } from './VoiceAssistantFAB';
 import type { CatalogCategory } from '../types';
 
 type DashboardProps = {
@@ -336,6 +337,15 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
           </button>
         </div>
       )}
+
+      {/* Voice Assistant FAB */}
+      <VoiceAssistantFAB
+        homes={homes}
+        catalog={catalog}
+        onAddProduct={addProduct}
+        onDeleteProduct={deleteProduct}
+        onUpdateProduct={updateProduct}
+      />
 
     </div>
   );
