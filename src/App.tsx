@@ -49,12 +49,15 @@ export const App = () => {
       <div style={{
         minHeight: '100vh',
         display: 'flex',
+        flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
         padding: 'clamp(1rem, 3vw, 2rem)',
         paddingBottom: '4rem',
         background: '#000000',
+        gap: '1.5rem',
       }}>
+        {/* Sign In / Sign Up Form */}
         <div style={{
           width: '100%',
           maxWidth: '420px',
@@ -84,6 +87,36 @@ export const App = () => {
               onSuccess={() => setFormMode('signin')}
             />
           )}
+        </div>
+
+        {/* App Intro Section */}
+        <div style={{
+          width: '100%',
+          maxWidth: '420px',
+          background: '#111111',
+          borderRadius: '12px',
+          padding: '1.25rem',
+          margin: '0 0.75rem',
+          color: '#ccc',
+          fontSize: '0.85rem',
+          lineHeight: 1.6,
+        }}>
+          <h3 style={{ color: '#1db954', margin: '0 0 0.75rem', fontSize: '1.1rem', textAlign: 'center' }}>
+            📦 What is Stock Tracker?
+          </h3>
+          <p style={{ margin: '0 0 0.5rem' }}>
+            Stock Tracker helps you manage your <strong style={{ color: '#fff' }}>home inventory</strong> — track groceries, medicines, cleaning supplies, and more across multiple homes.
+          </p>
+          <ul style={{ margin: '0.5rem 0', paddingLeft: '1.25rem' }}>
+            <li>🏠 Organize stock by homes</li>
+            <li>📅 Track expiry dates</li>
+            <li>🔔 Get notified when products expire</li>
+            <li>📷 Add items by scanning bills</li>
+            <li>📱 Works offline as an installed app</li>
+          </ul>
+          <p style={{ margin: '0.5rem 0 0', color: '#888', fontSize: '0.8rem', textAlign: 'center' }}>
+            Sign up free and start tracking your stock today!
+          </p>
         </div>
       </div>
       <InstallFooter />
