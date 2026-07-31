@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 // Store the deferred prompt globally
 let deferredPrompt: Event | null = null;
@@ -14,59 +14,75 @@ type InstallPageProps = {
 };
 
 export const InstallPage = ({ onSkip }: InstallPageProps) => {
-  const [installReady, setInstallReady] = useState(deferredPrompt !== null);
   const [installed, setInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
+  const [promptFailed, setPromptFailed] = useState(false);
+
+  const triggerInstall = useCallback(async () => {
+    if (!deferredPrompt) return;
+
+    const promptEvent = deferredPrompt as unknown as {
+      prompt: () => void;
+      userChoice: Promise<{ outcome: string }>;
+    };
+
+    promptEvent.prompt();
+    const result = await promptEvent.userChoice;
+
+    if (result.outcome === 'accepted') {
+      setInstalled(true);
+      setTimeout(() => onSkip(), 1500);
+    } else {
+      // User dismissed the install prompt
+      setPromptFailed(true);
+    }
+
+    deferredPrompt = null;
+  }, [onSkip]);
 
   useEffect(() => {
     // Check if already installed (standalone mode)
     if (window.matchMedia('(display-mode: standalone)').matches) {
       setInstalled(true);
-      setTimeout(() => onSkip(), 1500);
+      setTimeout(() => onSkip(), 1000);
       return;
     }
 
     // Check if iOS
     const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent);
     setIsIOS(isIOSDevice);
+    if (isIOSDevice) return; // iOS can't auto-install
 
-    // Listen for the install prompt if not already captured
+    // If prompt is already available, trigger immediately
+    if (deferredPrompt) {
+      triggerInstall();
+      return;
+    }
+
+    // Wait for the prompt event
     const handler = (e: Event) => {
       e.preventDefault();
       deferredPrompt = e;
-      setInstallReady(true);
+      // Auto-trigger install immediately
+      triggerInstall();
     };
 
     window.addEventListener('beforeinstallprompt', handler);
 
-    // Check if prompt was already captured
-    if (deferredPrompt) {
-      setInstallReady(true);
-    }
+    // Timeout — if prompt doesn't fire within 5 seconds, show manual options
+    const timeout = setTimeout(() => {
+      if (!deferredPrompt) {
+        setPromptFailed(true);
+      }
+    }, 5000);
 
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, [onSkip]);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      clearTimeout(timeout);
+    };
+  }, [onSkip, triggerInstall]);
 
-  const handleInstall = async () => {
-    if (!deferredPrompt) return;
-
-    // Show the install prompt
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const promptEvent = deferredPrompt as unknown as { prompt: () => void; userChoice: Promise<{ outcome: string }> };
-    promptEvent.prompt();
-
-    // Wait for the user's response
-    const result = await promptEvent.userChoice;
-
-    if (result.outcome === 'accepted') {
-      setInstalled(true);
-      setTimeout(() => onSkip(), 1500);
-    }
-
-    deferredPrompt = null;
-    setInstallReady(false);
-  };
-
+  // Already installed
   if (installed) {
     return (
       <div style={containerStyle}>
@@ -77,103 +93,76 @@ export const InstallPage = ({ onSkip }: InstallPageProps) => {
     );
   }
 
-  return (
-    <div style={containerStyle}>
-      {/* App Icon */}
-      <div style={{
-        width: '100px',
-        height: '100px',
-        borderRadius: '20px',
-        background: '#1db954',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: '1.5rem',
-        boxShadow: '0 4px 20px rgba(29, 185, 84, 0.3)',
-      }}>
-        <span style={{ fontSize: '2.5rem', fontWeight: 700, color: '#fff' }}>ST</span>
-      </div>
-
-      <h1 style={{ color: '#fff', fontSize: '1.5rem', margin: '0 0 0.5rem' }}>Stock Tracker</h1>
-      <p style={{ color: '#aaa', fontSize: '0.9rem', textAlign: 'center', maxWidth: '280px', marginBottom: '2rem' }}>
-        Track your home inventory, get expiry notifications, and manage stock on the go.
-      </p>
-
-      {/* Install Button */}
-      {installReady && !isIOS && (
-        <button
-          type="button"
-          onClick={handleInstall}
-          style={{
-            background: '#1db954',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '8px',
-            padding: '0.85rem 2rem',
-            fontSize: '1rem',
-            fontWeight: 700,
-            cursor: 'pointer',
-            marginBottom: '1rem',
-            boxShadow: '0 2px 10px rgba(29, 185, 84, 0.4)',
-          }}
-        >
-          📲 Install App
-        </button>
-      )}
-
-      {/* iOS Instructions */}
-      {isIOS && (
+  // iOS — show manual instructions
+  if (isIOS) {
+    return (
+      <div style={containerStyle}>
+        <div style={iconStyle}><span style={{ fontSize: '2.5rem', fontWeight: 700, color: '#fff' }}>ST</span></div>
+        <h1 style={{ color: '#fff', fontSize: '1.5rem', margin: '0 0 0.5rem' }}>Stock Tracker</h1>
         <div style={{
           background: '#1a1a1a',
           border: '1px solid #333',
           borderRadius: '8px',
-          padding: '1rem',
+          padding: '1.25rem',
           maxWidth: '300px',
           textAlign: 'center',
-          marginBottom: '1rem',
+          marginBottom: '1.5rem',
         }}>
-          <p style={{ color: '#fff', fontSize: '0.85rem', margin: '0 0 0.5rem' }}>
-            To install on iOS:
+          <p style={{ color: '#fff', fontSize: '0.9rem', margin: '0 0 0.75rem', fontWeight: 600 }}>
+            Install on iOS:
           </p>
-          <p style={{ color: '#aaa', fontSize: '0.8rem', margin: 0 }}>
-            Tap <strong style={{ color: '#fff' }}>Share</strong> (↑) → then <strong style={{ color: '#fff' }}>Add to Home Screen</strong>
+          <p style={{ color: '#ccc', fontSize: '0.85rem', margin: 0, lineHeight: 1.5 }}>
+            1. Tap the <strong style={{ color: '#fff' }}>Share</strong> button (↑)<br />
+            2. Scroll down and tap<br /><strong style={{ color: '#fff' }}>Add to Home Screen</strong>
           </p>
         </div>
-      )}
+        <button type="button" onClick={onSkip} style={skipStyle}>Use in browser instead</button>
+      </div>
+    );
+  }
 
-      {/* Waiting for prompt */}
-      {!installReady && !isIOS && (
-        <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
-          <div style={{
-            border: '3px solid rgba(255,255,255,0.1)',
-            borderTop: '3px solid #1db954',
-            borderRadius: '50%',
-            width: '30px',
-            height: '30px',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 0.75rem',
-          }}></div>
-          <p style={{ color: '#aaa', fontSize: '0.8rem' }}>Preparing install...</p>
-          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-        </div>
-      )}
-
-      {/* Skip link */}
-      <button
-        type="button"
-        onClick={onSkip}
-        style={{
-          background: 'none',
+  // Prompt failed or timed out — show manual install button
+  if (promptFailed) {
+    return (
+      <div style={containerStyle}>
+        <div style={iconStyle}><span style={{ fontSize: '2.5rem', fontWeight: 700, color: '#fff' }}>ST</span></div>
+        <h1 style={{ color: '#fff', fontSize: '1.5rem', margin: '0 0 0.5rem' }}>Stock Tracker</h1>
+        <p style={{ color: '#aaa', fontSize: '0.85rem', textAlign: 'center', maxWidth: '280px', marginBottom: '1.5rem' }}>
+          Use your browser menu to install this app, or continue using it in the browser.
+        </p>
+        <button type="button" onClick={onSkip} style={{
+          background: '#1db954',
+          color: '#fff',
           border: 'none',
-          color: '#888',
+          borderRadius: '8px',
+          padding: '0.75rem 2rem',
+          fontSize: '1rem',
+          fontWeight: 600,
           cursor: 'pointer',
-          fontSize: '0.85rem',
-          textDecoration: 'underline',
-          marginTop: '1rem',
-        }}
-      >
-        Skip, use in browser
-      </button>
+        }}>
+          Continue to App
+        </button>
+      </div>
+    );
+  }
+
+  // Loading — waiting for install prompt to fire
+  return (
+    <div style={containerStyle}>
+      <div style={iconStyle}><span style={{ fontSize: '2.5rem', fontWeight: 700, color: '#fff' }}>ST</span></div>
+      <h1 style={{ color: '#fff', fontSize: '1.5rem', margin: '0 0 1rem' }}>Stock Tracker</h1>
+      <div style={{
+        border: '3px solid rgba(255,255,255,0.1)',
+        borderTop: '3px solid #1db954',
+        borderRadius: '50%',
+        width: '35px',
+        height: '35px',
+        animation: 'spin 1s linear infinite',
+        marginBottom: '1rem',
+      }}></div>
+      <p style={{ color: '#aaa', fontSize: '0.85rem' }}>Preparing install...</p>
+      <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+      <button type="button" onClick={onSkip} style={{ ...skipStyle, marginTop: '2rem' }}>Skip, use in browser</button>
     </div>
   );
 };
@@ -186,4 +175,25 @@ const containerStyle = {
   alignItems: 'center',
   background: '#000',
   padding: '2rem',
+};
+
+const iconStyle = {
+  width: '90px',
+  height: '90px',
+  borderRadius: '20px',
+  background: '#1db954',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginBottom: '1.5rem',
+  boxShadow: '0 4px 20px rgba(29, 185, 84, 0.3)',
+};
+
+const skipStyle = {
+  background: 'none',
+  border: 'none',
+  color: '#888',
+  cursor: 'pointer',
+  fontSize: '0.85rem',
+  textDecoration: 'underline' as const,
 };
