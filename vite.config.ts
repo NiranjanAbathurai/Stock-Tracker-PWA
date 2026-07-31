@@ -7,7 +7,7 @@ export default defineConfig({
     proxy: {
       // Proxy /api requests to the local Netlify functions server
       '/api': {
-        target: 'http://localhost:8889',
+        target: 'https://niranjan-abathurai-portfolio.netlify.app',
         changeOrigin: true,
       },
     },

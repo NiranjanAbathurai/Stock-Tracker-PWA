@@ -78,13 +78,13 @@ export function useHomes() {
     setHomes((prev) => prev.map((home) => (home.id === id ? { ...home, expanded: !home.expanded } : home)));
   }, []);
 
-  const addProduct = useCallback(async (homeId: number) => {
+  const addProduct = useCallback(async (homeId: number, initialData?: Partial<Omit<Product, 'id' | 'isExpired'>>) => {
     const newProductData = {
-      stockType: '',
-      product: '',
-      quantity: '',
-      expiryDate: '',
-      availability: '' as const,
+      stockType: initialData?.stockType || '',
+      product: initialData?.product || '',
+      quantity: initialData?.quantity || '',
+      expiryDate: initialData?.expiryDate || '',
+      availability: (initialData?.availability || '') as Product['availability'],
     };
     const newProductFromApi = await api.addProduct(homeId, newProductData);
     const newProduct: Product = {

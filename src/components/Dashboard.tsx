@@ -29,6 +29,7 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [newHomeName, setNewHomeName] = useState('');
   const [showAddHome, setShowAddHome] = useState(false);
+  const [isParsingBill, setIsParsingBill] = useState<number | null>(null);
 
   const fetchCatalog = async () => {
     setCatalogLoading(true);
@@ -92,6 +93,8 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
   };
 
   const handleBillUpload = async (homeId: number, file: File) => {
+    setIsParsingBill(homeId);
+
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = async () => {
@@ -118,17 +121,64 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
           return;
         }
 
-        // Add each parsed item as a product
-        for (let i = 0; i < parsedItems.length; i++) {
-          await addProduct(homeId);
-          // The addProduct creates an empty product, we need to update it
-          // For simplicity, we'll just alert success
+        // Add each parsed item — try to match against catalog for accurate stockType/product
+        for (const item of parsedItems) {
+          let matchedStockType = '';
+          let matchedProduct = item.product || '';
+
+          // Try to find the product in the catalog (case-insensitive, partial match)
+          const productLower = (item.product || '').toLowerCase();
+          let foundInCatalog = false;
+
+          for (const cat of catalog) {
+            const matchedItem = cat.items.find(catItem =>
+              catItem.name.toLowerCase() === productLower ||
+              catItem.name.toLowerCase().includes(productLower) ||
+              productLower.includes(catItem.name.toLowerCase())
+            );
+            if (matchedItem) {
+              matchedStockType = cat.name;
+              matchedProduct = matchedItem.name;
+              foundInCatalog = true;
+              break;
+            }
+          }
+
+          // If product didn't match, try matching the stockType from AI
+          if (!foundInCatalog && item.stockType) {
+            const stockTypeLower = item.stockType.toLowerCase();
+            const matchedCat = catalog.find(cat =>
+              cat.name.toLowerCase() === stockTypeLower ||
+              cat.name.toLowerCase().includes(stockTypeLower) ||
+              stockTypeLower.includes(cat.name.toLowerCase())
+            );
+            if (matchedCat) {
+              matchedStockType = matchedCat.name;
+            } else {
+              matchedStockType = 'Others';
+            }
+          } else if (!foundInCatalog) {
+            matchedStockType = 'Others';
+          }
+
+          await addProduct(homeId, {
+            product: matchedProduct,
+            quantity: String(item.quantity || '1'),
+            stockType: matchedStockType,
+            expiryDate: '',
+            availability: 'Yes',
+          });
         }
-        alert(`Found ${parsedItems.length} items from the bill. Please verify and update.`);
       } catch (err) {
         console.error('Error parsing bill:', err);
         alert(`Failed to parse bill: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      } finally {
+        setIsParsingBill(null);
       }
+    };
+    reader.onerror = () => {
+      alert('Failed to read the image file.');
+      setIsParsingBill(null);
     };
   };
 
@@ -141,7 +191,32 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '600px', margin: '0 auto', padding: '1rem', color: '#fff', fontSize: '14px' }}>
+    <div style={{ width: '100%', maxWidth: '600px', margin: '0 auto', padding: '1rem', color: '#fff', fontSize: '14px', position: 'relative' }}>
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+      {isParsingBill !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 10000,
+          flexDirection: 'column',
+          gap: '1rem'
+        }}>
+          <div style={{ border: '4px solid rgba(255, 255, 255, 0.2)', borderTop: '4px solid #1db954', borderRadius: '50%', width: '40px', height: '40px', animation: 'spin 1s linear infinite' }}></div>
+          <p style={{ color: '#fff', fontSize: '1rem', fontWeight: 600 }}>Parsing your bill, please wait...</p>
+        </div>
+      )}
       <OfflineBanner />
 
       {/* Header */}
