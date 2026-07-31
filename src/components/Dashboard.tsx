@@ -260,6 +260,74 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
           </button>
         </div>
       )}
+
+      {/* Install App Button — only shows in browser (not standalone) */}
+      <InstallBanner />
+    </div>
+  );
+};
+
+/* ============ Install Banner ============ */
+const InstallBanner = () => {
+  const [show, setShow] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<Event | null>(null);
+
+  useEffect(() => {
+    // Don't show if already installed as standalone
+    if (window.matchMedia('(display-mode: standalone)').matches) return;
+
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShow(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  if (!show) return null;
+
+  const handleInstall = async () => {
+    if (!deferredPrompt) return;
+    const promptEvent = deferredPrompt as unknown as { prompt: () => void; userChoice: Promise<{ outcome: string }> };
+    promptEvent.prompt();
+    const result = await promptEvent.userChoice;
+    if (result.outcome === 'accepted') {
+      setShow(false);
+    }
+    setDeferredPrompt(null);
+  };
+
+  return (
+    <div style={{
+      marginTop: '1.5rem',
+      padding: '0.75rem',
+      background: '#1a1a1a',
+      border: '1px solid #1db954',
+      borderRadius: '8px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '0.5rem',
+    }}>
+      <span style={{ color: '#ccc', fontSize: '0.8rem' }}>📱 Install as app for a better experience</span>
+      <button
+        type="button"
+        onClick={handleInstall}
+        style={{
+          background: '#1db954',
+          color: '#fff',
+          border: 'none',
+          borderRadius: '6px',
+          padding: '0.4rem 0.75rem',
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        Install
+      </button>
     </div>
   );
 };
