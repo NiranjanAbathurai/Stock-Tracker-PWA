@@ -178,14 +178,14 @@ export const HomeAccordion = ({
               {/* Table Header */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 90px 40px',
-                gap: '0.5rem',
-                padding: '0.5rem 0.5rem',
+                gridTemplateColumns: '1fr 70px 36px',
+                gap: '0.4rem',
+                padding: '0.5rem 0.25rem',
                 borderBottom: '2px solid rgba(255,255,255,0.3)',
               }}>
-                <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.8rem' }}>Product</span>
-                <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.8rem', textAlign: 'center' }}>Availability</span>
-                <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.8rem', textAlign: 'center' }}>Action</span>
+                <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.75rem' }}>Product</span>
+                <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.75rem', textAlign: 'center' }}>Avail.</span>
+                <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.75rem', textAlign: 'center' }}>Del</span>
               </div>
 
               {/* Table Rows */}
@@ -260,12 +260,13 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '1fr 90px 40px',
-      gap: '0.5rem',
-      padding: '0.6rem 0.5rem',
+      gridTemplateColumns: '1fr 70px 36px',
+      gap: '0.4rem',
+      padding: '0.6rem 0.25rem',
       borderBottom: showSeparator ? '1px solid rgba(255,255,255,0.15)' : 'none',
       background: isExpired ? 'rgba(229, 57, 53, 0.08)' : 'transparent',
       alignItems: 'start',
+      overflow: 'hidden',
     }}>
       {/* Product Column — stacked fields */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
@@ -321,24 +322,24 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
       </div>
 
       {/* Availability Column — Yes/No radio */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem', paddingTop: '0.3rem' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', color: '#fff', fontSize: '0.8rem', cursor: 'pointer' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem', paddingTop: '0.3rem' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#fff', fontSize: '0.7rem', cursor: 'pointer' }}>
           <input
             type="radio"
             name={`avail-${product.id}`}
             checked={product.availability === 'Yes'}
             onChange={() => onUpdate(homeId, product.id, { availability: 'Yes' })}
-            style={{ accentColor: '#1db954', width: '14px', height: '14px' }}
+            style={{ accentColor: '#1db954', width: '12px', height: '12px', margin: 0 }}
           />
           Yes
         </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', color: '#fff', fontSize: '0.8rem', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#fff', fontSize: '0.7rem', cursor: 'pointer' }}>
           <input
             type="radio"
             name={`avail-${product.id}`}
             checked={product.availability === 'No'}
             onChange={() => onUpdate(homeId, product.id, { availability: 'No' })}
-            style={{ accentColor: '#1db954', width: '14px', height: '14px' }}
+            style={{ accentColor: '#1db954', width: '12px', height: '12px', margin: 0 }}
           />
           No
         </label>
@@ -354,16 +355,19 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
             }
           }}
           style={{
-            background: 'none',
+            background: '#e53935',
             border: 'none',
-            color: '#e53935',
+            color: '#fff',
             cursor: 'pointer',
-            fontSize: '1.2rem',
-            padding: '0.2rem',
+            fontSize: '0.7rem',
+            padding: '0.25rem 0.35rem',
+            borderRadius: '3px',
+            fontWeight: 700,
+            lineHeight: 1,
           }}
           title="Delete product"
         >
-          🗑️
+          ✕
         </button>
       </div>
     </div>
