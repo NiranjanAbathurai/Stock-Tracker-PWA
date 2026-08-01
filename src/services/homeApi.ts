@@ -21,7 +21,8 @@ export async function getHomesWithProducts() {
     .from('homes')
     .select('*, products(*)')
     .eq('user_id', user.id)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: true, referencedTable: 'products' });
 
   if (error) throw error;
   return data;

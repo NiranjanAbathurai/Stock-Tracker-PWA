@@ -90,9 +90,15 @@ export const InstallPage = ({ onSkip }: InstallPageProps) => {
       {/* iOS Instructions */}
       {isIOS && (
         <div style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px', padding: '1rem', maxWidth: '300px', textAlign: 'center', marginBottom: '1rem' }}>
+          <p style={{ color: '#f0ad4e', fontSize: '0.75rem', margin: '0 0 0.5rem', fontWeight: 600 }}>
+            ⚠️ Recommended: Use Safari browser
+          </p>
           <p style={{ color: '#fff', fontSize: '0.85rem', margin: '0 0 0.5rem', fontWeight: 600 }}>To install on iOS:</p>
           <p style={{ color: '#ccc', fontSize: '0.8rem', margin: 0, lineHeight: 1.5 }}>
             Tap <strong style={{ color: '#fff' }}>Share</strong> (↑) → <strong style={{ color: '#fff' }}>Add to Home Screen</strong>
+          </p>
+          <p style={{ color: '#999', fontSize: '0.7rem', margin: '0.5rem 0 0', lineHeight: 1.4 }}>
+            PWA installation on iOS is only supported in Safari.
           </p>
         </div>
       )}
