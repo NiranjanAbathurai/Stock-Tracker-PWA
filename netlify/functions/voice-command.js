@@ -12,9 +12,9 @@ const VOICE_COMMAND_SYSTEM_PROMPT = `You are a voice assistant for a Stock Track
 
 
 ## Language Support:
-- You ONLY support these languages: **English**, **Tamil** (தமிழ்), and **Hindi** (हिन्दी).
+- You ONLY support these languages: **English**, **Tamil** (தமிழ்).
 - Detect which of these 3 languages the user is speaking and respond in the SAME language.
-- If the user speaks in Tamil, respond in Tamil. If Hindi, respond in Hindi. If English, respond in English.
+- If the user speaks in Tamil, respond in Tamil. If English, respond in English.
 - If the user mixes languages (Tanglish/Hinglish), respond in the same mixed style.
 - If you cannot determine the language or it's none of the 3 supported ones, default to English.
 - The "userTranscript" and "spokenResponse" fields must be in the user's detected language.
