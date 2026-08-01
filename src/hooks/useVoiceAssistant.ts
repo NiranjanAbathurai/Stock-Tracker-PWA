@@ -15,6 +15,13 @@ import type { HomeItem, CatalogCategory, Product } from '../types';
 
 export type VoiceState = 'idle' | 'recording' | 'processing' | 'speaking';
 
+export type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: number;
+};
+
 type UseVoiceAssistantProps = {
   homes: HomeItem[];
   catalog: CatalogCategory[];
@@ -33,6 +40,7 @@ export function useVoiceAssistant({
   const [state, setState] = useState<VoiceState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [lastResponse, setLastResponse] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
   const recorderRef = useRef<ReturnType<typeof createAudioRecorder> | null>(null);
   const conversationRef = useRef<ConversationMessage[]>([]);
@@ -112,12 +120,38 @@ export function useVoiceAssistant({
         catalogCategories
       );
 
+      // Add user transcript to chat messages
+      if (response.userTranscript) {
+        const userMsg: ChatMessage = {
+          id: `user-${Date.now()}`,
+          role: 'user',
+          text: response.userTranscript,
+          timestamp: Date.now(),
+        };
+        setChatMessages((prev) => [...prev, userMsg]);
+
+        // Also store in conversation history for context
+        conversationRef.current.push({
+          role: 'user',
+          text: response.userTranscript,
+        });
+      }
+
       // Store the AI response in conversation history
       if (response.spokenResponse) {
         conversationRef.current.push({
           role: 'assistant',
           text: response.spokenResponse,
         });
+
+        // Add AI response to chat messages
+        const aiMsg: ChatMessage = {
+          id: `ai-${Date.now()}`,
+          role: 'assistant',
+          text: response.spokenResponse,
+          timestamp: Date.now(),
+        };
+        setChatMessages((prev) => [...prev, aiMsg]);
 
         // Keep only last 6 messages for context
         if (conversationRef.current.length > 6) {
@@ -274,12 +308,14 @@ export function useVoiceAssistant({
   const clearConversation = useCallback(() => {
     conversationRef.current = [];
     setLastResponse(null);
+    setChatMessages([]);
   }, []);
 
   return {
     state,
     error,
     lastResponse,
+    chatMessages,
     isSupported,
     toggleRecording,
     cancel,

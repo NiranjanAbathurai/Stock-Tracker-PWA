@@ -1,6 +1,5 @@
 import { useState, useRef } from 'react';
 import type { HomeItem, CatalogCategory, Product } from '../types';
-import { ConfirmDialog } from './ui/ConfirmDialog';
 
 type HomeAccordionProps = {
   home: HomeItem;
@@ -31,7 +30,6 @@ export const HomeAccordion = ({
 }: HomeAccordionProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(home.name);
-  const [showDeleteHomeDialog, setShowDeleteHomeDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -113,26 +111,15 @@ export const HomeAccordion = ({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            setShowDeleteHomeDialog(true);
+            if (confirm('Are you sure you want to delete this home and all its products?')) {
+              onDelete(home.id);
+            }
           }}
           style={{ background: 'none', border: 'none', color: '#e53935', cursor: 'pointer', fontSize: '1.1rem', padding: '0 0.25rem' }}
           title="Delete home"
         >
           🗑️
         </button>
-        <ConfirmDialog
-          open={showDeleteHomeDialog}
-          title="Delete Home"
-          message={`Are you sure you want to delete "${home.name}" and all its products? This cannot be undone.`}
-          confirmText="Delete"
-          cancelText="Cancel"
-          variant="danger"
-          onConfirm={() => {
-            setShowDeleteHomeDialog(false);
-            onDelete(home.id);
-          }}
-          onCancel={() => setShowDeleteHomeDialog(false)}
-        />
       </div>
 
       {/* Body */}
@@ -266,7 +253,6 @@ const fieldInput = {
 };
 
 const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDelete, showSeparator }: ProductRowProps) => {
-  const [showDeleteProductDialog, setShowDeleteProductDialog] = useState(false);
   const isExpired = product.isExpired;
   const selectedCategory = catalog.find((cat) => cat.name === product.stockType);
   const productOptions = selectedCategory ? selectedCategory.items : [];
@@ -289,10 +275,16 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
           value={product.stockType}
           onChange={(e) => {
             const newStockType = e.target.value;
+            // Only clear product if it doesn't belong to the newly selected category
             if (newStockType) {
-              // When user manually selects a category, keep the product name as-is
-              // (don't clear it — user may have typed a custom name like a medicine)
-              onUpdate(homeId, product.id, { stockType: newStockType });
+              const selectedCat = catalog.find(cat => cat.name === newStockType);
+              const productBelongsToNewCategory = selectedCat?.items.some(
+                item => item.name.toLowerCase() === product.product.toLowerCase()
+              );
+              onUpdate(homeId, product.id, {
+                stockType: newStockType,
+                product: productBelongsToNewCategory ? product.product : ''
+              });
             } else {
               onUpdate(homeId, product.id, { stockType: '', product: '' });
             }
@@ -378,24 +370,24 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
       </div>
 
       {/* Availability Column — Yes/No radio */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem', paddingTop: '0.3rem' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#fff', fontSize: '0.7rem', cursor: 'pointer' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', paddingTop: '0.3rem' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#fff', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem' }}>
           <input
             type="radio"
             name={`avail-${product.id}`}
             checked={product.availability === 'Yes'}
             onChange={() => onUpdate(homeId, product.id, { availability: 'Yes' })}
-            style={{ accentColor: '#1db954', width: '12px', height: '12px', margin: 0 }}
+            style={{ accentColor: '#1db954', width: '20px', height: '20px', margin: 0, cursor: 'pointer' }}
           />
           Yes
         </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#fff', fontSize: '0.7rem', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#fff', fontSize: '0.8rem', cursor: 'pointer', padding: '0.2rem' }}>
           <input
             type="radio"
             name={`avail-${product.id}`}
             checked={product.availability === 'No'}
             onChange={() => onUpdate(homeId, product.id, { availability: 'No' })}
-            style={{ accentColor: '#1db954', width: '12px', height: '12px', margin: 0 }}
+            style={{ accentColor: '#1db954', width: '20px', height: '20px', margin: 0, cursor: 'pointer' }}
           />
           No
         </label>
@@ -405,7 +397,11 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
       <div style={{ paddingTop: '0.3rem', textAlign: 'center' }}>
         <button
           type="button"
-          onClick={() => setShowDeleteProductDialog(true)}
+          onClick={() => {
+            if (confirm('Delete this product?')) {
+              onDelete(homeId, product.id);
+            }
+          }}
           style={{
             background: '#e53935',
             border: 'none',
@@ -421,19 +417,6 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
         >
           ✕
         </button>
-        <ConfirmDialog
-          open={showDeleteProductDialog}
-          title="Delete Product"
-          message={`Delete "${product.product || 'this product'}"?`}
-          confirmText="Delete"
-          cancelText="Cancel"
-          variant="danger"
-          onConfirm={() => {
-            setShowDeleteProductDialog(false);
-            onDelete(homeId, product.id);
-          }}
-          onCancel={() => setShowDeleteProductDialog(false)}
-        />
       </div>
     </div>
   );

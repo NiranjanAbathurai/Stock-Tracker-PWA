@@ -53,8 +53,12 @@ You MUST return ONLY a valid JSON object (no markdown, no extra text). Structure
   ],
   "needsMoreInfo": false,
   "spokenResponse": "Done! I have added eggs to Medavakkam.",
+  "userTranscript": "Add eggs to Medavakkam",
   "followUpQuestion": null
 }
+
+## IMPORTANT:
+- The "userTranscript" field MUST contain the exact text transcription of what the user said in the audio. This is critical for the chat UI.
 
 ## Examples:
 - User: "Add 2 kg rice" (1 home: "Medavakkam") → add rice, qty "2 kg", target Medavakkam

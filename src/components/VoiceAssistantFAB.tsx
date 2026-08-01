@@ -1,4 +1,5 @@
-import { useVoiceAssistant, type VoiceState } from '../hooks/useVoiceAssistant';
+import { useState, useRef, useEffect } from 'react';
+import { useVoiceAssistant, type VoiceState, type ChatMessage } from '../hooks/useVoiceAssistant';
 import type { HomeItem, CatalogCategory, Product } from '../types';
 
 type VoiceAssistantFABProps = {
@@ -19,9 +20,10 @@ export const VoiceAssistantFAB = ({
   const {
     state,
     error,
-    lastResponse,
+    chatMessages,
     isSupported,
     toggleRecording,
+    clearConversation,
   } = useVoiceAssistant({
     homes,
     catalog,
@@ -29,6 +31,23 @@ export const VoiceAssistantFAB = ({
     onDeleteProduct,
     onUpdateProduct,
   });
+
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (chatEndRef.current && isChatOpen) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages, isChatOpen]);
+
+  // Auto-open chat when new messages arrive
+  useEffect(() => {
+    if (chatMessages.length > 0) {
+      setIsChatOpen(true);
+    }
+  }, [chatMessages.length]);
 
   if (!isSupported) return null;
 
@@ -48,72 +67,175 @@ export const VoiceAssistantFAB = ({
           0%, 100% { transform: scaleY(1); }
           50% { transform: scaleY(1.8); }
         }
+        @keyframes chatSlideUp {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes messageFadeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
 
-      {/* Status label above the FAB */}
-      {state !== 'idle' && (
+      {/* Chat Popup */}
+      {isChatOpen && (
         <div
           style={{
             position: 'fixed',
-            bottom: '96px',
+            bottom: '90px',
             right: '16px',
-            background: 'rgba(0, 0, 0, 0.85)',
-            color: '#fff',
-            padding: '8px 14px',
-            borderRadius: '8px',
-            fontSize: '13px',
-            fontWeight: 500,
-            maxWidth: '220px',
-            textAlign: 'center',
+            width: 'min(320px, calc(100vw - 32px))',
+            maxHeight: '400px',
+            background: '#1a1a1a',
+            borderRadius: '16px',
+            border: '1px solid #333',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
             zIndex: 10001,
-            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            animation: 'chatSlideUp 0.3s ease-out',
           }}
         >
-          {state === 'recording' && '🎤 Listening...'}
-          {state === 'processing' && '🤔 Processing...'}
-          {state === 'speaking' && '🔊 Speaking...'}
-        </div>
-      )}
+          {/* Chat Header */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 16px',
+              background: '#222',
+              borderBottom: '1px solid #333',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '16px' }}>🤖</span>
+              <span style={{ color: '#fff', fontWeight: 600, fontSize: '14px' }}>
+                Voice Assistant
+              </span>
+              {state !== 'idle' && (
+                <span
+                  style={{
+                    fontSize: '11px',
+                    color: state === 'recording' ? '#e53935' : '#1db954',
+                    fontWeight: 500,
+                  }}
+                >
+                  {state === 'recording' && '● Listening'}
+                  {state === 'processing' && '⏳ Thinking...'}
+                  {state === 'speaking' && '🔊 Speaking'}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {chatMessages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearConversation}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#888',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                  }}
+                  title="Clear chat"
+                >
+                  🗑️
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsChatOpen(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#888',
+                  cursor: 'pointer',
+                  fontSize: '18px',
+                  lineHeight: 1,
+                  padding: '0 4px',
+                }}
+                title="Close chat"
+              >
+                ×
+              </button>
+            </div>
+          </div>
 
-      {/* Error message */}
-      {error && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '96px',
-            right: '16px',
-            background: 'rgba(229, 57, 53, 0.9)',
-            color: '#fff',
-            padding: '8px 14px',
-            borderRadius: '8px',
-            fontSize: '12px',
-            maxWidth: '220px',
-            textAlign: 'center',
-            zIndex: 10001,
-          }}
-        >
-          {error}
-        </div>
-      )}
+          {/* Chat Messages */}
+          <div
+            style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '12px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+              minHeight: '120px',
+              maxHeight: '300px',
+            }}
+          >
+            {chatMessages.length === 0 ? (
+              <div
+                style={{
+                  color: '#666',
+                  textAlign: 'center',
+                  fontSize: '13px',
+                  padding: '24px 0',
+                }}
+              >
+                <span style={{ fontSize: '24px', display: 'block', marginBottom: '8px' }}>🎤</span>
+                Tap the mic button and speak a command.
+                <br />
+                <span style={{ fontSize: '11px', color: '#555' }}>
+                  e.g. "Add 2 kg rice" or "Eggs are finished"
+                </span>
+              </div>
+            ) : (
+              chatMessages.map((msg) => (
+                <ChatBubble key={msg.id} message={msg} />
+              ))
+            )}
 
-      {/* Last AI response (shown briefly) */}
-      {lastResponse && state === 'idle' && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '96px',
-            right: '16px',
-            background: 'rgba(29, 185, 84, 0.9)',
-            color: '#fff',
-            padding: '8px 14px',
-            borderRadius: '8px',
-            fontSize: '12px',
-            maxWidth: '240px',
-            textAlign: 'center',
-            zIndex: 10001,
-          }}
-        >
-          {lastResponse}
+            {/* Processing indicator */}
+            {state === 'processing' && (
+              <div
+                style={{
+                  alignSelf: 'flex-start',
+                  background: '#2a2a2a',
+                  borderRadius: '12px 12px 12px 4px',
+                  padding: '10px 14px',
+                  animation: 'messageFadeIn 0.3s ease-out',
+                }}
+              >
+                <TypingIndicator />
+              </div>
+            )}
+
+            {/* Error message in chat */}
+            {error && (
+              <div
+                style={{
+                  alignSelf: 'center',
+                  background: 'rgba(229, 57, 53, 0.15)',
+                  border: '1px solid rgba(229, 57, 53, 0.3)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  color: '#e53935',
+                  fontSize: '12px',
+                  textAlign: 'center',
+                  animation: 'messageFadeIn 0.3s ease-out',
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            <div ref={chatEndRef} />
+          </div>
         </div>
       )}
 
@@ -127,7 +249,7 @@ export const VoiceAssistantFAB = ({
           position: 'fixed',
           bottom: '20px',
           right: '24px',
-          width: '60px',
+          width: '56px',
           height: '56px',
           borderRadius: '50%',
           border: 'none',
@@ -143,9 +265,100 @@ export const VoiceAssistantFAB = ({
       >
         {getButtonContent(state)}
       </button>
+
+      {/* Chat toggle badge (when chat is closed and has messages) */}
+      {!isChatOpen && chatMessages.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setIsChatOpen(true)}
+          style={{
+            position: 'fixed',
+            bottom: '78px',
+            right: '24px',
+            width: '24px',
+            height: '24px',
+            borderRadius: '50%',
+            background: '#1db954',
+            border: 'none',
+            color: '#fff',
+            fontSize: '11px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            boxShadow: '0 2px 8px rgba(29, 185, 84, 0.4)',
+          }}
+          title="Open chat"
+        >
+          💬
+        </button>
+      )}
     </>
   );
 };
+
+// ============================================================
+// Chat Bubble Component
+// ============================================================
+
+function ChatBubble({ message }: { message: ChatMessage }) {
+  const isUser = message.role === 'user';
+
+  return (
+    <div
+      style={{
+        alignSelf: isUser ? 'flex-end' : 'flex-start',
+        maxWidth: '85%',
+        animation: 'messageFadeIn 0.3s ease-out',
+      }}
+    >
+      <div
+        style={{
+          background: isUser ? '#1db954' : '#2a2a2a',
+          color: '#fff',
+          borderRadius: isUser ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
+          padding: '10px 14px',
+          fontSize: '13px',
+          lineHeight: 1.4,
+          wordBreak: 'break-word',
+        }}
+      >
+        {!isUser && <span style={{ fontSize: '10px', color: '#aaa', display: 'block', marginBottom: '4px' }}>🤖 Assistant</span>}
+        {isUser && <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.7)', display: 'block', marginBottom: '4px' }}>🎤 You said</span>}
+        {message.text}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Typing Indicator
+// ============================================================
+
+function TypingIndicator() {
+  return (
+    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', padding: '2px 0' }}>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          style={{
+            width: '6px',
+            height: '6px',
+            borderRadius: '50%',
+            background: '#888',
+            animation: `voiceWave 1s ease-in-out infinite ${i * 0.15}s`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// Helper Functions
+// ============================================================
 
 function getAriaLabel(state: VoiceState): string {
   switch (state) {

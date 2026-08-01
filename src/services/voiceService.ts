@@ -6,6 +6,7 @@ export type VoiceCommandResponse = {
   actions: VoiceAction[];
   needsMoreInfo: boolean;
   spokenResponse: string;
+  userTranscript?: string;
   followUpQuestion: string | null;
 };
 
