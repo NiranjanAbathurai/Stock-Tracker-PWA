@@ -6,7 +6,6 @@ export type VoiceCommandResponse = {
   actions: VoiceAction[];
   needsMoreInfo: boolean;
   spokenResponse: string;
-  userTranscript?: string;
   followUpQuestion: string | null;
 };
 
@@ -217,7 +216,19 @@ export async function sendVoiceCommand(
 // ============================================================
 
 /**
+ * Detect language from text (supports English, Tamil, Hindi)
+ */
+function detectLanguage(text: string): 'en' | 'ta' | 'hi' {
+  // Tamil Unicode range: \u0B80-\u0BFF
+  if (/[\u0B80-\u0BFF]/.test(text)) return 'ta';
+  // Hindi/Devanagari Unicode range: \u0900-\u097F
+  if (/[\u0900-\u097F]/.test(text)) return 'hi';
+  return 'en';
+}
+
+/**
  * Speak text aloud using the browser's Speech Synthesis API
+ * Automatically detects language (English/Tamil/Hindi) and picks the right voice
  * Returns a promise that resolves when speaking is complete
  */
 export function speakText(text: string): Promise<void> {
@@ -234,15 +245,29 @@ export function speakText(text: string): Promise<void> {
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
 
-    // Try to use a natural-sounding English voice
+    // Detect language and pick appropriate voice
+    const lang = detectLanguage(text);
     const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(
-      (v) =>
-        v.lang.startsWith('en') &&
-        (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha'))
-    );
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
+
+    let selectedVoice: SpeechSynthesisVoice | undefined;
+
+    if (lang === 'en') {
+      selectedVoice = voices.find(
+        (v) =>
+          v.lang.startsWith('en') &&
+          (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha'))
+      );
+    } else {
+      // For Tamil (ta) or Hindi (hi), find a matching voice
+      selectedVoice = voices.find((v) => v.lang.startsWith(lang));
+    }
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      utterance.lang = selectedVoice.lang;
+    } else {
+      // Fallback: set lang so the browser tries its best
+      utterance.lang = lang;
     }
 
     utterance.onend = () => {

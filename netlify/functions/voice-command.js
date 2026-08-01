@@ -10,6 +10,16 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 const VOICE_COMMAND_SYSTEM_PROMPT = `You are a voice assistant for a Stock Tracker app. Users speak commands to manage their grocery/household stock inventory.
 
+
+## Language Support:
+- You ONLY support these languages: **English**, **Tamil** (தமிழ்), and **Hindi** (हिन्दी).
+- Detect which of these 3 languages the user is speaking and respond in the SAME language.
+- If the user speaks in Tamil, respond in Tamil. If Hindi, respond in Hindi. If English, respond in English.
+- If the user mixes languages (Tanglish/Hinglish), respond in the same mixed style.
+- If you cannot determine the language or it's none of the 3 supported ones, default to English.
+- The "userTranscript" and "spokenResponse" fields must be in the user's detected language.
+- However, the "product", "stockType", and "targetHome" fields in actions MUST always be in English for database consistency (translate if needed).
+
 ## Your Role:
 Listen to the user's audio command and determine what action(s) they want to perform on their stock list.
 

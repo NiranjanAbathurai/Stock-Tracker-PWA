@@ -228,7 +228,7 @@ export function useVoiceAssistant({
               quantity: action.quantity || '1',
               stockType: action.stockType || 'Others',
               expiryDate: '',
-              availability: 'Yes',
+              availability: 'No',
             });
             break;
           }
