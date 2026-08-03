@@ -31,8 +31,8 @@ export function useHomes() {
             id: p.id as number,
             stockType: (p.stock_type as string) || '',
             product: (p.product as string) || '',
-            quantity: availability === 'No' && !isNowExpiredAndUnavailable ? '' : (p.quantity as string) || '',
-            expiryDate: availability === 'No' && !isNowExpiredAndUnavailable ? '' : (p.expiry_date as string) || '',
+            quantity: (p.quantity as string) || '',
+            expiryDate: (p.expiry_date as string) || '',
             availability: availability as Product['availability'],
             isExpired: isNowExpiredAndUnavailable,
           };

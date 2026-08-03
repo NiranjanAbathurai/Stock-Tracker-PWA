@@ -12,6 +12,7 @@ html, body {
   color: #ffffff;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
 #root {
@@ -29,6 +30,26 @@ input[type="text"],
 input[type="email"],
 input[type="password"],
 input[type="number"],
+input[type="date"],
 select {
   font-size: 16px;
+}
+
+/* Ensure date input calendar icon is visible */
+.expiry-date-input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+/* Hide native date input placeholder text (dd/mm/yyyy) on webkit */
+.expiry-date-input::-webkit-datetime-edit-text,
+.expiry-date-input::-webkit-datetime-edit-month-field,
+.expiry-date-input::-webkit-datetime-edit-day-field,
+.expiry-date-input::-webkit-datetime-edit-year-field {
+  -webkit-appearance: none;
+}
+
+.expiry-date-input.empty::-webkit-datetime-edit {
+  color: transparent;
 }

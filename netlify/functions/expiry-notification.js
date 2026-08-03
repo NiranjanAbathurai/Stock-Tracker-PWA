@@ -35,9 +35,17 @@ exports.handler = async (event, context) => {
   // Configure web-push if VAPID keys are available
   let pushEnabled = false;
   if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && VAPID_SUBJECT) {
-    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
-    pushEnabled = true;
-    console.log('Web Push notifications enabled.');
+     try {
+      webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+      pushEnabled = true;
+      console.log('Web Push notifications enabled.');
+    } catch (vapidError) {
+      console.error(
+        'Failed to configure VAPID keys — push notifications disabled.',
+        vapidError.message,
+        '\nHint: VAPID keys must be URL-safe base64-encoded. Generate valid keys with: npx web-push generate-vapid-keys'
+      );
+    }
   } else {
     console.log('Web Push notifications disabled (missing VAPID keys).');
   }

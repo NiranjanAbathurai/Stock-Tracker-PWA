@@ -124,7 +124,7 @@ export const HomeAccordion = ({
 
       {/* Body */}
       {home.expanded && (
-        <div style={{ padding: '0.75rem', background: '#111' }}>
+        <div style={{ padding: '0.75rem', background: '#111', overflow: 'hidden' }}>
           {/* Hidden file inputs */}
           <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept="image/*" onChange={handleFileChange} />
           <input type="file" ref={cameraInputRef} style={{ display: 'none' }} accept="image/*" capture="environment" onChange={handleFileChange} />
@@ -178,8 +178,8 @@ export const HomeAccordion = ({
               {/* Table Header */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 70px 36px',
-                gap: '0.4rem',
+                gridTemplateColumns: 'minmax(0, 1fr) 60px 32px',
+                gap: '0.3rem',
                 padding: '0.5rem 0.25rem',
                 borderBottom: '2px solid rgba(255,255,255,0.3)',
               }}>
@@ -260,8 +260,8 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '1fr 70px 36px',
-      gap: '0.4rem',
+      gridTemplateColumns: 'minmax(0, 1fr) 60px 32px',
+      gap: '0.3rem',
       padding: '0.6rem 0.25rem',
       borderBottom: showSeparator ? '1px solid rgba(255,255,255,0.15)' : 'none',
       background: isExpired ? 'rgba(229, 57, 53, 0.08)' : 'transparent',
@@ -269,7 +269,7 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
       overflow: 'hidden',
     }}>
       {/* Product Column — stacked fields */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', minWidth: 0 }}>
         {/* Type of Stock — select dropdown */}
         <select
           value={product.stockType}
@@ -355,13 +355,31 @@ const ProductRow = ({ product, homeId, catalog, catalogLoading, onUpdate, onDele
             placeholder="Qty"
             style={{ ...fieldInput, width: '60px', flex: '0 0 60px' }}
           />
-          <input
-            type="date"
-            value={product.expiryDate}
-            min={new Date().toISOString().split('T')[0]}
-            onChange={(e) => onUpdate(homeId, product.id, { expiryDate: e.target.value })}
-            style={{ ...fieldInput, flex: 1 }}
-          />
+          <div style={{ position: 'relative', flex: 1 }}>
+            <input
+              type="date"
+              value={product.expiryDate}
+              min={new Date().toISOString().split('T')[0]}
+              onChange={(e) => onUpdate(homeId, product.id, { expiryDate: e.target.value })}
+              style={{ ...fieldInput, flex: 1, width: '100%' }}
+              className={`expiry-date-input${!product.expiryDate ? ' empty' : ''}`}
+            />
+            {!product.expiryDate && (
+              <span
+                style={{
+                  position: 'absolute',
+                  left: '0.5rem',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: '#999',
+                  fontSize: '0.85rem',
+                  pointerEvents: 'none',
+                }}
+              >
+                Exp (DD/MM/YYYY)
+              </span>
+            )}
+          </div>
         </div>
 
         {isExpired && (

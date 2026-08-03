@@ -192,7 +192,7 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '600px', margin: '0 auto', padding: '1rem', color: '#fff', fontSize: '14px', position: 'relative' }}>
+    <div style={{ width: '100%', maxWidth: '600px', margin: '0 auto', padding: '1rem', color: '#fff', fontSize: '14px', position: 'relative', overflowX: 'hidden' }}>
       <style>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }
