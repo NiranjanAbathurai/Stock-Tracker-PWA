@@ -3,7 +3,7 @@ import { useAuth } from './hooks/useAuth';
 import { SplashScreen } from './components/SplashScreen';
 import { SignInForm } from './components/SignInForm';
 import { SignUpForm } from './components/SignUpForm';
-import { Dashboard } from './components/Dashboard';
+import AppShell from './components/AppShell';
 import { InstallPage } from './components/InstallPage';
 
 export const App = () => {
@@ -37,7 +37,7 @@ export const App = () => {
   if (authState === 'authenticated') {
     return (
       <>
-        <Dashboard onLogout={logout} />
+        <AppShell onLogout={logout} />
         <InstallFooter />
       </>
     );
@@ -156,7 +156,7 @@ const InstallFooter = () => {
   return (
     <div style={{
       position: 'fixed',
-      bottom: 0,
+      bottom: '68px',
       left: 0,
       right: 0,
       padding: '0.6rem 1rem',
@@ -166,7 +166,7 @@ const InstallFooter = () => {
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: '0.5rem',
-      zIndex: 9999,
+      zIndex: 900,
     }}>
       <span style={{ color: '#ccc', fontSize: '0.8rem' }}>📱 Install as app</span>
       <button

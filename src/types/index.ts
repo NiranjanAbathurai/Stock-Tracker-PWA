@@ -1,3 +1,7 @@
+export type AvailabilityStatus = 'available' | 'low' | 'out_of_stock';
+
+export type Tab = 'dashboard' | 'inventory' | 'profile';
+
 export type CatalogItem = {
   id: number;
   name: string;
@@ -17,6 +21,7 @@ export type Product = {
   expiryDate: string;
   availability: 'Yes' | 'No' | '';
   isExpired?: boolean;
+  availability_status?: AvailabilityStatus;
 };
 
 export type HomeItem = {

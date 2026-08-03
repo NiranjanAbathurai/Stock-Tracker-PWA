@@ -55,9 +55,9 @@ export const VoiceAssistantFAB = ({
     <>
       <style>{`
         @keyframes voicePulse {
-          0% { box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.7); }
-          70% { box-shadow: 0 0 0 15px rgba(229, 57, 53, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }
+          0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+          70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
         @keyframes voiceSpin {
           0% { transform: rotate(0deg); }
@@ -82,13 +82,13 @@ export const VoiceAssistantFAB = ({
         <div
           style={{
             position: 'fixed',
-            bottom: '140px',
+            bottom: '186px',
             right: '16px',
             width: 'min(320px, calc(100vw - 32px))',
             maxHeight: '400px',
-            background: '#1a1a1a',
+            background: 'var(--bg-card, #1E293B)',
             borderRadius: '16px',
-            border: '1px solid #333',
+            border: '1px solid var(--border-color, #334155)',
             boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
             zIndex: 10001,
             display: 'flex',
@@ -104,20 +104,20 @@ export const VoiceAssistantFAB = ({
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '12px 16px',
-              background: '#222',
-              borderBottom: '1px solid #333',
+              background: 'var(--bg-primary, #0F172A)',
+              borderBottom: '1px solid var(--border-color, #334155)',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '16px' }}>🤖</span>
-              <span style={{ color: '#fff', fontWeight: 600, fontSize: '14px' }}>
+              <span style={{ color: 'var(--text-primary, #F8FAFC)', fontWeight: 600, fontSize: '14px' }}>
                 Voice Assistant
               </span>
               {state !== 'idle' && (
                 <span
                   style={{
                     fontSize: '11px',
-                    color: state === 'recording' ? '#e53935' : '#1db954',
+                    color: state === 'recording' ? 'var(--accent-red, #EF4444)' : 'var(--accent-green, #22C55E)',
                     fontWeight: 500,
                   }}
                 >
@@ -135,7 +135,7 @@ export const VoiceAssistantFAB = ({
                   style={{
                     background: 'none',
                     border: 'none',
-                    color: '#888',
+                    color: 'var(--text-secondary, #94A3B8)',
                     cursor: 'pointer',
                     fontSize: '12px',
                     padding: '2px 6px',
@@ -152,7 +152,7 @@ export const VoiceAssistantFAB = ({
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#888',
+                  color: 'var(--text-secondary, #94A3B8)',
                   cursor: 'pointer',
                   fontSize: '18px',
                   lineHeight: 1,
@@ -181,7 +181,7 @@ export const VoiceAssistantFAB = ({
             {chatMessages.length === 0 ? (
               <div
                 style={{
-                  color: '#666',
+                  color: 'var(--text-secondary, #94A3B8)',
                   textAlign: 'center',
                   fontSize: '13px',
                   padding: '24px 0',
@@ -190,7 +190,7 @@ export const VoiceAssistantFAB = ({
                 <span style={{ fontSize: '24px', display: 'block', marginBottom: '8px' }}>🎤</span>
                 Tap the mic button and speak a command.
                 <br />
-                <span style={{ fontSize: '11px', color: '#555' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary, #94A3B8)', opacity: 0.7 }}>
                   e.g. "Add 2 kg rice" or "Eggs are finished"
                 </span>
               </div>
@@ -205,7 +205,7 @@ export const VoiceAssistantFAB = ({
               <div
                 style={{
                   alignSelf: 'flex-start',
-                  background: '#2a2a2a',
+                  background: 'var(--bg-input, #334155)',
                   borderRadius: '12px 12px 12px 4px',
                   padding: '10px 14px',
                   animation: 'messageFadeIn 0.3s ease-out',
@@ -220,11 +220,11 @@ export const VoiceAssistantFAB = ({
               <div
                 style={{
                   alignSelf: 'center',
-                  background: 'rgba(229, 57, 53, 0.15)',
-                  border: '1px solid rgba(229, 57, 53, 0.3)',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
                   borderRadius: '8px',
                   padding: '8px 12px',
-                  color: '#e53935',
+                  color: 'var(--accent-red, #EF4444)',
                   fontSize: '12px',
                   textAlign: 'center',
                   animation: 'messageFadeIn 0.3s ease-out',
@@ -247,8 +247,8 @@ export const VoiceAssistantFAB = ({
         aria-label={getAriaLabel(state)}
         style={{
           position: 'fixed',
-          bottom: '70px',
-          right: '24px',
+          bottom: '120px',
+          right: '20px',
           width: '56px',
           height: '56px',
           borderRadius: '50%',
@@ -273,12 +273,12 @@ export const VoiceAssistantFAB = ({
           onClick={() => setIsChatOpen(true)}
           style={{
             position: 'fixed',
-            bottom: '128px',
+            bottom: '178px',
             right: '24px',
             width: '24px',
             height: '24px',
             borderRadius: '50%',
-            background: '#1db954',
+            background: 'var(--accent-green, #22C55E)',
             border: 'none',
             color: '#fff',
             fontSize: '11px',
@@ -288,7 +288,7 @@ export const VoiceAssistantFAB = ({
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 10000,
-            boxShadow: '0 2px 8px rgba(29, 185, 84, 0.4)',
+            boxShadow: '0 2px 8px rgba(34, 197, 94, 0.4)',
           }}
           title="Open chat"
         >
@@ -316,8 +316,8 @@ function ChatBubble({ message }: { message: ChatMessage }) {
     >
       <div
         style={{
-          background: isUser ? '#1db954' : '#2a2a2a',
-          color: '#fff',
+          background: isUser ? 'var(--accent-green, #22C55E)' : 'var(--bg-input, #334155)',
+          color: 'var(--text-primary, #F8FAFC)',
           borderRadius: isUser ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
           padding: '10px 14px',
           fontSize: '13px',
@@ -325,7 +325,7 @@ function ChatBubble({ message }: { message: ChatMessage }) {
           wordBreak: 'break-word',
         }}
       >
-        {!isUser && <span style={{ fontSize: '10px', color: '#aaa', display: 'block', marginBottom: '4px' }}>🤖 Assistant</span>}
+        {!isUser && <span style={{ fontSize: '10px', color: 'var(--text-secondary, #94A3B8)', display: 'block', marginBottom: '4px' }}>🤖 Assistant</span>}
         {isUser && <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.7)', display: 'block', marginBottom: '4px' }}>🎤 You said</span>}
         {message.text}
       </div>
@@ -347,7 +347,7 @@ function TypingIndicator() {
             width: '6px',
             height: '6px',
             borderRadius: '50%',
-            background: '#888',
+            background: 'var(--text-secondary, #94A3B8)',
             animation: `voiceWave 1s ease-in-out infinite ${i * 0.15}s`,
           }}
         />
@@ -373,23 +373,23 @@ function getButtonStyle(state: VoiceState): React.CSSProperties {
   switch (state) {
     case 'idle':
       return {
-        backgroundColor: '#1db954',
-        boxShadow: '0 4px 12px rgba(29, 185, 84, 0.4)',
+        backgroundColor: 'var(--accent-green, #22C55E)',
+        boxShadow: '0 4px 12px rgba(34, 197, 94, 0.4)',
       };
     case 'recording':
       return {
-        backgroundColor: '#e53935',
+        backgroundColor: 'var(--accent-red, #EF4444)',
         animation: 'voicePulse 1.5s infinite',
       };
     case 'processing':
       return {
-        backgroundColor: '#555',
+        backgroundColor: 'var(--bg-input, #334155)',
         boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
       };
     case 'speaking':
       return {
-        backgroundColor: '#1db954',
-        boxShadow: '0 4px 12px rgba(29, 185, 84, 0.4)',
+        backgroundColor: 'var(--accent-green, #22C55E)',
+        boxShadow: '0 4px 12px rgba(34, 197, 94, 0.4)',
       };
   }
 }

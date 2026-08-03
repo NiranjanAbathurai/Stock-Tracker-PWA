@@ -1,0 +1,227 @@
+import React, { useState } from 'react';
+import type { Product, AvailabilityStatus } from '../../types';
+import * as api from '../../services/homeApi';
+
+interface EditProductModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  product: Product;
+  homeId: number;
+  onProductUpdated: () => void;
+}
+
+const EditProductModal: React.FC<EditProductModalProps> = ({
+  isOpen,
+  onClose,
+  product,
+  homeId: _homeId,
+  onProductUpdated,
+}) => {
+  const [name, setName] = useState(product.product);
+  const [category, setCategory] = useState(product.stockType);
+  const [quantity, setQuantity] = useState(product.quantity);
+  const [expiryDate, setExpiryDate] = useState(product.expiryDate);
+  const [availabilityStatus, setAvailabilityStatus] = useState<AvailabilityStatus>(
+    product.availability_status || (product.availability === 'Yes' ? 'available' : 'out_of_stock')
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!isOpen) return null;
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const availability: Product['availability'] = availabilityStatus === 'available' ? 'Yes' : 'No';
+      await api.updateProduct(product.id, {
+        product: name,
+        stockType: category,
+        quantity,
+        expiryDate,
+        availability,
+        availability_status: availabilityStatus,
+      });
+      onProductUpdated();
+      onClose();
+    } catch (err) {
+      console.error('Error updating product:', err);
+      setError('Failed to update product. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: '10px',
+    border: '1px solid var(--border-color)',
+    background: 'var(--bg-input)',
+    color: 'var(--text-primary)',
+    fontSize: '0.9rem',
+    outline: 'none',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+  };
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: '0.8rem',
+    color: 'var(--text-secondary)',
+    marginBottom: '4px',
+    display: 'block',
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0,0,0,0.6)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: '16px',
+    }}>
+      <div style={{
+        background: 'var(--bg-card)',
+        borderRadius: '16px',
+        padding: '24px',
+        width: '100%',
+        maxWidth: '400px',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        border: '1px solid var(--border-color)',
+      }}>
+        <h3 style={{
+          margin: '0 0 16px 0',
+          color: 'var(--text-primary)',
+          fontSize: '1.1rem',
+        }}>
+          Edit Product
+        </h3>
+
+        {error && (
+          <div style={{
+            padding: '8px 12px',
+            borderRadius: '8px',
+            background: 'rgba(239, 68, 68, 0.15)',
+            color: 'var(--accent-red)',
+            fontSize: '0.8rem',
+            marginBottom: '12px',
+          }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {/* Name */}
+          <div>
+            <label style={labelStyle}>Product Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+
+          {/* Category */}
+          <div>
+            <label style={labelStyle}>Category</label>
+            <input
+              type="text"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+
+          {/* Quantity */}
+          <div>
+            <label style={labelStyle}>Quantity</label>
+            <input
+              type="text"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+
+          {/* Expiry Date */}
+          <div>
+            <label style={labelStyle}>Expiry Date</label>
+            <input
+              type="date"
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+
+          {/* Availability Status */}
+          <div>
+            <label style={labelStyle}>Availability Status</label>
+            <select
+              value={availabilityStatus}
+              onChange={(e) => setAvailabilityStatus(e.target.value as AvailabilityStatus)}
+              style={inputStyle}
+            >
+              <option value="available">Available</option>
+              <option value="low">Low Stock</option>
+              <option value="out_of_stock">Out of Stock</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Buttons */}
+        <div style={{
+          display: 'flex',
+          gap: '10px',
+          marginTop: '20px',
+          justifyContent: 'flex-end',
+        }}>
+          <button
+            onClick={onClose}
+            disabled={saving}
+            style={{
+              padding: '8px 18px',
+              borderRadius: '10px',
+              border: '1px solid var(--border-color)',
+              background: 'transparent',
+              color: 'var(--text-secondary)',
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              padding: '8px 18px',
+              borderRadius: '10px',
+              border: 'none',
+              background: 'var(--accent-green)',
+              color: '#fff',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.7 : 1,
+              fontFamily: 'inherit',
+            }}
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default EditProductModal;
