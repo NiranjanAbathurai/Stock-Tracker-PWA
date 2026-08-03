@@ -53,6 +53,9 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         // Import the custom push handler into the generated service worker
         importScripts: ['/sw-push.js'],
+                // Force new service worker to activate immediately (no close/reopen needed)
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/mskobghlcvvvlljfkbpr\.supabase\.co\/rest\/v1\/.*/i,

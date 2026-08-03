@@ -259,9 +259,17 @@ export function speakText(text: string): Promise<void> {
           v.lang.startsWith('en') &&
           (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha'))
       );
+    } else if (lang === 'ta') {
+      // For Tamil, prefer Google Tamil voice (sounds most natural)
+      selectedVoice =
+        voices.find((v) => v.lang.startsWith('ta') && v.name.includes('Google')) ||
+        voices.find((v) => v.lang === 'ta-IN') ||
+        voices.find((v) => v.lang.startsWith('ta'));
     } else {
-      // For Tamil (ta) or Hindi (hi), find a matching voice
-      selectedVoice = voices.find((v) => v.lang.startsWith(lang));
+      // For Hindi or other languages
+      selectedVoice =
+        voices.find((v) => v.lang.startsWith(lang) && v.name.includes('Google')) ||
+        voices.find((v) => v.lang.startsWith(lang));
     }
 
     if (selectedVoice) {
