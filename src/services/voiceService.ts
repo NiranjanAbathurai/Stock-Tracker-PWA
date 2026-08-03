@@ -11,7 +11,7 @@ export type VoiceCommandResponse = {
 };
 
 export type VoiceAction = {
-  type: 'add' | 'delete' | 'update_availability';
+  type: 'add' | 'delete' | 'update_availability' | 'query';
   product: string;
   quantity?: string;
   stockType?: string;
@@ -29,6 +29,7 @@ export type HomeContext = {
     quantity: string;
     stockType: string;
     availability: string;
+    expiryDate?: string;
   }>;
 };
 

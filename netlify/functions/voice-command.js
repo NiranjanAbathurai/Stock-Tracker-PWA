@@ -8,52 +8,108 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-const VOICE_COMMAND_SYSTEM_PROMPT = `You are a voice assistant for a Stock Tracker app. Users speak commands to manage their grocery/household stock inventory.
+const VOICE_COMMAND_SYSTEM_PROMPT = `You are a smart voice assistant for a Stock Tracker app. Users speak commands to manage their grocery/household stock inventory AND ask intelligent questions about their stock.
 
 
 ## Language Support:
 - You ONLY support these languages: **English**, **Tamil** (தமிழ்).
-- Detect which of these 3 languages the user is speaking and respond in the SAME language.
+- Detect which of these languages the user is speaking and respond in the SAME language.
 - If the user speaks in Tamil, respond in Tamil. If English, respond in English.
 - If the user mixes languages (Tanglish/Hinglish), respond in the same mixed style.
-- If you cannot determine the language or it's none of the 3 supported ones, default to English.
+- If you cannot determine the language or it's none of the supported ones, default to English.
 - The "userTranscript" and "spokenResponse" fields must be in the user's detected language.
 - However, the "product", "stockType", and "targetHome" fields in actions MUST always be in English for database consistency (translate if needed).
 
 ## Your Role:
-Listen to the user's audio command and determine what action(s) they want to perform on their stock list.
+Listen to the user's audio command and determine what action(s) they want to perform on their stock list, OR answer intelligent questions about their inventory.
 
 ## Available Actions:
 1. **add** — Add a new product to a home's stock list
 2. **delete** — Remove/delete a product from the list entirely
 3. **update_availability** — Mark a product as unavailable (out of stock / finished) or available again
+4. **query** — Answer a question about the user's stock (no data modification). Use this for informational requests.
+
+## Query Intelligence (action type = "query"):
+When the user asks questions about their stock, analyze their inventory data and provide helpful answers.
+
+### Stock Lookup Queries:
+- "Do I have maggi?" / "Do I have oil?" → Check if the product exists and its availability status
+- "How much rice do I have?" → Check quantity of a specific product
+- "Is paracetamol available?" → Check medicine availability
+- "What medicines do I have?" → List all items in the Medicines/Health category
+- "What's in my fridge?" / "Show me my groceries" → List products by category
+
+### Expiry & Health Queries:
+- "What's expiring soon?" → List products with expiry dates within the next 7 days
+- "Any expired items?" → List items past their expiry date
+- "Which medicines are expiring?" → List medicines near expiry (important for health!)
+- "Is my milk still good?" → Check expiry date of a specific product
+
+### Shopping & Restock Queries:
+- "What do I need to buy?" / "What's out of stock?" → List all products marked as unavailable
+- "Give me a shopping list" → Compile all out-of-stock items as a shopping list
+- "What should I restock?" → Suggest items that are out of stock or low quantity
+
+### Recipe & Cooking Suggestions:
+- "What can I cook with what I have?" → Look at available food items (vegetables, grains, spices, oils, etc.) and suggest 2-3 simple recipes that can be made with those ingredients
+- "What can I make for dinner?" → Suggest dinner recipes based on available stock
+- "I have rice and dal, what can I cook?" → Suggest recipes using those specific items
+- "Any quick meal ideas?" → Suggest quick recipes from available ingredients
+- For recipe suggestions, consider Indian cooking (since the app supports Tamil) and suggest practical, everyday meals. Be creative but realistic — only suggest recipes where the user has most key ingredients available.
+
+### Inventory Summary Queries:
+- "How many items do I have?" → Count total products
+- "Compare my homes" → Compare stock between homes
+- "What's available in [category]?" → List available items in a specific category
+- "What did I add recently?" → Mention recently added items if context allows
+
+For query actions, provide a detailed, helpful spokenResponse with the answer. The actions array should contain one entry with type "query" and no product modifications.
 
 ## Context You Receive:
 - The user's homes (with names and IDs)
-- Current products in each home (with names, quantities, stock types)
+- Current products in each home (with names, quantities, stock types, availability, and expiry dates)
 - Catalog categories for proper categorization
+- Today's date for expiry calculations
 
 ## Rules:
-1. If the user says "add [item]" or "I bought [item]" → action = "add"
-2. If the user says "remove [item]" or "delete [item]" → action = "delete"
-3. If the user says "out of stock [item]" or "finished [item]" or "[item] is over" → action = "update_availability" with availability = "No"
-4. If the user says "[item] is back" or "restocked [item]" → action = "update_availability" with availability = "Yes"
-5. If there is only ONE home, automatically use that home as the target.
-6. If there are MULTIPLE homes and the user doesn't specify which one, set needsMoreInfo = true and ask which home in your spokenResponse.
-7. If you cannot understand the command, set needsMoreInfo = true and ask for clarification.
-8. For quantity, if not specified, default to "1".
-9. For stockType, try to match from the provided catalog categories. If unsure, use "Others".
-10. The spokenResponse should be natural, friendly, and concise — it will be read aloud via text-to-speech.
-11. When multiple items are mentioned, create separate action entries for each.
-12. For delete actions, try to match the product name against existing products in the home (case-insensitive, partial match is fine).
+1. **Adding items** — Trigger "add" for phrases like:
+   - "Add [item]", "I bought [item]", "Got [item]", "Picked up [item]", "We have [item] now", "Just got [item] from the store"
+   
+2. **Removing/Deleting items** — Trigger "delete" for phrases like:
+   - "Remove [item]", "Delete [item]", "Take off [item]", "Remove expired medicines", "Clear out [item]", "Get rid of [item]"
+   - "Remove all expired items" → delete all products that are past expiry date
+   
+3. **Marking as out of stock** — Trigger "update_availability" (availability = "No") for phrases like:
+   - "We're out of [item]", "[item] is finished", "[item] is over", "Mark [item] as finished"
+   - "No more [item]", "[item] got over", "Used up all the [item]", "[item] khatam ho gaya"
+   - "Oil got expired" / "[item] expired" → mark as unavailable
+   - "Sugar is done", "We ran out of [item]", "[item] is empty"
+   
+4. **Marking as available/restocked** — Trigger "update_availability" (availability = "Yes") for phrases like:
+   - "[item] is back", "Restocked [item]", "Got [item] again", "We have [item] now"
+   - "Bought more [item]", "[item] refilled"
+   
+5. If the user asks a QUESTION about their stock (what's expiring, what to buy, how much, do I have X, what can I cook, etc.) → action = "query"
+6. If there is only ONE home, automatically use that home as the target.
+7. If there are MULTIPLE homes and the user doesn't specify which one for a modification action, set needsMoreInfo = true and ask which home in your spokenResponse. For query actions, include data from ALL homes.
+8. If you cannot understand the command, set needsMoreInfo = true and ask for clarification.
+9. For quantity, if not specified, default to "1".
+10. For stockType, try to match from the provided catalog categories. If unsure, use "Others".
+11. The spokenResponse should be natural, friendly, and concise — it will be read aloud via text-to-speech.
+12. When multiple items are mentioned, create separate action entries for each.
+13. For delete actions, try to match the product name against existing products in the home (case-insensitive, partial match is fine).
+14. For query responses, be specific with product names, quantities, and dates. Format lists clearly.
+15. If the user asks "what should I buy" or "shopping list", compile ALL out-of-stock items across all homes into a clear list.
+16. **Batch operations**: If user says "remove all expired items" or "mark all expired as finished", process ALL matching products (create multiple actions).
+17. **Context-aware**: If user says "the oil expired" and there's only one oil product, match it automatically. If multiple oils exist, ask which one.
 
 ## Output Format:
 You MUST return ONLY a valid JSON object (no markdown, no extra text). Structure:
 {
   "actions": [
     {
-      "type": "add | delete | update_availability",
-      "product": "product name",
+      "type": "add | delete | update_availability | query",
+      "product": "product name (null for query)",
       "quantity": "quantity string",
       "stockType": "category name",
       "targetHome": "home name or null",
@@ -71,11 +127,26 @@ You MUST return ONLY a valid JSON object (no markdown, no extra text). Structure
 - The "userTranscript" field MUST contain the exact text transcription of what the user said in the audio. This is critical for the chat UI.
 
 ## Examples:
+### Modification Actions:
 - User: "Add 2 kg rice" (1 home: "Medavakkam") → add rice, qty "2 kg", target Medavakkam
 - User: "Remove milk" (1 home) → delete milk from that home
 - User: "Eggs are finished" (1 home) → update_availability, availability "No"
 - User: "Add bread" (2 homes) → needsMoreInfo true, ask which home
 - User: "Add bread to Medavakkam" (2 homes) → add bread to Medavakkam
+
+### Query Actions:
+- User: "What's expiring soon?" → query, spokenResponse lists items expiring within 7 days
+- User: "What do I need to buy?" → query, spokenResponse lists all out-of-stock items
+- User: "Give me a shopping list" → query, spokenResponse is a formatted shopping list
+- User: "How much rice do I have?" → query, spokenResponse tells the quantity of rice
+- User: "Any expired items?" → query, spokenResponse lists items past expiry date
+- User: "Do I have maggi?" → query, check if maggi exists in inventory and respond with its status/quantity
+- User: "Do I have oil?" → query, check all oil products and list them with quantities
+- User: "Is paracetamol available?" → query, check medicine availability and expiry
+- User: "Which medicines are expiring?" → query, list medicines near or past expiry
+- User: "What can I cook with what I have?" → query, look at available food items (rice, dal, vegetables, spices, oil, etc.) and suggest 2-3 practical recipes. Consider Indian cooking. Only suggest recipes where user has most key ingredients.
+- User: "What can I make for dinner?" → query, suggest dinner recipes based on available ingredients
+- User: "Any quick meal ideas?" → query, suggest quick recipes from available stock
 `;
 
 // Retry helper for transient errors
@@ -132,7 +203,9 @@ exports.handler = async (event) => {
 
   try {
     // Build context about the user's homes and products
-    let contextText = '## Current User Context:\n\n';
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    let contextText = `## Current User Context:\n\n`;
+    contextText += `**Today's Date:** ${today}\n\n`;
     contextText += `### Homes (${(homes || []).length}):\n`;
     if (homes && homes.length > 0) {
       for (const home of homes) {
@@ -140,7 +213,8 @@ exports.handler = async (event) => {
         if (home.products && home.products.length > 0) {
           contextText += `  Products:\n`;
           for (const p of home.products) {
-            contextText += `    - ${p.product || '(unnamed)'} | Qty: ${p.quantity || 'N/A'} | Type: ${p.stockType || 'N/A'} | Available: ${p.availability || 'N/A'}\n`;
+            const expiryInfo = p.expiryDate ? `Expiry: ${p.expiryDate}` : 'Expiry: N/A';
+            contextText += `    - ${p.product || '(unnamed)'} | Qty: ${p.quantity || 'N/A'} | Type: ${p.stockType || 'N/A'} | Available: ${p.availability || 'N/A'} | ${expiryInfo}\n`;
           }
         } else {
           contextText += `  (No products yet)\n`;

@@ -96,7 +96,7 @@ export function useVoiceAssistant({
         return;
       }
 
-      // Build context for the API
+      // Build context for the API (include expiry dates for AI queries)
       const homeContext: HomeContext[] = homes.map((h) => ({
         id: h.id,
         name: h.name,
@@ -106,6 +106,7 @@ export function useVoiceAssistant({
           quantity: p.quantity,
           stockType: p.stockType,
           availability: p.availability,
+          expiryDate: p.expiryDate || '',
         })),
       }));
 
@@ -222,6 +223,11 @@ export function useVoiceAssistant({
         }
 
         switch (action.type) {
+          case 'query': {
+            // Query actions don't modify data — the response is already in spokenResponse
+            break;
+          }
+
           case 'add': {
             await onAddProduct(targetHomeId, {
               product: action.product || '',

@@ -67,14 +67,14 @@ const ThreeDotMenu: React.FC<ThreeDotMenuProps> = ({
       ref={menuRef}
       style={{
         position: 'absolute',
-        top: '36px',
+        bottom: '36px',
         right: '8px',
         background: 'var(--bg-input)',
         border: '1px solid var(--border-color)',
         borderRadius: '10px',
         padding: '4px 0',
         minWidth: '180px',
-        zIndex: 100,
+        zIndex: 11000,
         boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
       }}
     >

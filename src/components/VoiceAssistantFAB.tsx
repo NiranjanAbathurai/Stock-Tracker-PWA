@@ -35,6 +35,63 @@ export const VoiceAssistantFAB = ({
   const [isChatOpen, setIsChatOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Draggable FAB state
+  const [fabPosition, setFabPosition] = useState<{ x: number; y: number }>(() => {
+    // Load saved position or default to bottom-right
+    const saved = localStorage.getItem('voice-fab-position');
+    if (saved) {
+      try { return JSON.parse(saved); } catch { /* ignore */ }
+    }
+    return { x: window.innerWidth - 76, y: window.innerHeight - 184 };
+  });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{ x: number; y: number; fabX: number; fabY: number } | null>(null);
+  const hasDraggedRef = useRef(false);
+
+  const handleDragStart = (clientX: number, clientY: number) => {
+    dragStartRef.current = { x: clientX, y: clientY, fabX: fabPosition.x, fabY: fabPosition.y };
+    hasDraggedRef.current = false;
+    setIsDragging(true);
+  };
+
+  const handleDragMove = (clientX: number, clientY: number) => {
+    if (!dragStartRef.current) return;
+    const dx = clientX - dragStartRef.current.x;
+    const dy = clientY - dragStartRef.current.y;
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      hasDraggedRef.current = true;
+    }
+    const newX = Math.max(0, Math.min(window.innerWidth - 56, dragStartRef.current.fabX + dx));
+    const newY = Math.max(60, Math.min(window.innerHeight - 80, dragStartRef.current.fabY + dy));
+    setFabPosition({ x: newX, y: newY });
+  };
+
+  const handleDragEnd = () => {
+    setIsDragging(false);
+    dragStartRef.current = null;
+    // Snap to nearest side (left or right)
+    setFabPosition((prev) => {
+      const midX = window.innerWidth / 2;
+      const snappedX = prev.x < midX ? 16 : window.innerWidth - 72;
+      const snapped = { x: snappedX, y: prev.y };
+      localStorage.setItem('voice-fab-position', JSON.stringify(snapped));
+      return snapped;
+    });
+  };
+
+  // Mouse events for desktop drag
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMouseMove = (e: MouseEvent) => handleDragMove(e.clientX, e.clientY);
+    const onMouseUp = () => handleDragEnd();
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [isDragging]);
+
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (chatEndRef.current && isChatOpen) {
@@ -82,8 +139,9 @@ export const VoiceAssistantFAB = ({
         <div
           style={{
             position: 'fixed',
-            bottom: '186px',
+            bottom: `${window.innerHeight - fabPosition.y + 10}px`,
             right: '16px',
+            left: fabPosition.x < window.innerWidth / 2 ? '16px' : 'auto',
             width: 'min(320px, calc(100vw - 32px))',
             maxHeight: '400px',
             background: 'var(--bg-card, #1E293B)',
@@ -239,27 +297,48 @@ export const VoiceAssistantFAB = ({
         </div>
       )}
 
-      {/* The FAB button */}
+      {/* The FAB button — draggable */}
       <button
         type="button"
-        onClick={toggleRecording}
+        onClick={() => {
+          // Only trigger recording if not dragged
+          if (!hasDraggedRef.current) {
+            toggleRecording();
+          }
+        }}
+        onMouseDown={(e) => {
+          handleDragStart(e.clientX, e.clientY);
+        }}
+        onTouchStart={(e) => {
+          const touch = e.touches[0];
+          handleDragStart(touch.clientX, touch.clientY);
+        }}
+        onTouchMove={(e) => {
+          const touch = e.touches[0];
+          handleDragMove(touch.clientX, touch.clientY);
+        }}
+        onTouchEnd={() => {
+          handleDragEnd();
+        }}
         disabled={state === 'processing'}
         aria-label={getAriaLabel(state)}
         style={{
           position: 'fixed',
-          bottom: '120px',
-          right: '20px',
+          left: `${fabPosition.x}px`,
+          top: `${fabPosition.y}px`,
           width: '56px',
           height: '56px',
           borderRadius: '50%',
           border: 'none',
-          cursor: state === 'processing' ? 'wait' : 'pointer',
+          cursor: isDragging ? 'grabbing' : (state === 'processing' ? 'wait' : 'grab'),
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 10000,
-          transition: 'background-color 0.3s ease, transform 0.2s ease',
+          transition: isDragging ? 'none' : 'background-color 0.3s ease, transform 0.2s ease, left 0.3s ease, top 0.1s ease',
           transform: state === 'recording' ? 'scale(1.1)' : 'scale(1)',
+          touchAction: 'none',
+          userSelect: 'none',
           ...getButtonStyle(state),
         }}
       >
@@ -273,8 +352,8 @@ export const VoiceAssistantFAB = ({
           onClick={() => setIsChatOpen(true)}
           style={{
             position: 'fixed',
-            bottom: '178px',
-            right: '24px',
+            left: `${fabPosition.x + 16}px`,
+            top: `${fabPosition.y - 28}px`,
             width: '24px',
             height: '24px',
             borderRadius: '50%',
