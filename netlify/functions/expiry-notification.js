@@ -181,7 +181,7 @@ exports.handler = async (event, context) => {
               console.log(`Push sent to subscription ${sub.id} for user ${userId}`);
             } catch (pushError) {
               const code = pushError.statusCode;
-              if (code === 410 || code === 404 || code === 401 || code === 403) {
+            if (code === 400 || code === 401 || code === 403 || code === 404 || code === 410) {
                 // Subscription expired, invalid, or VAPID mismatch — remove from DB
                 console.log(`Removing invalid subscription ${sub.id} (HTTP ${code})`);
                 await supabase.from('push_subscriptions').delete().eq('id', sub.id);
