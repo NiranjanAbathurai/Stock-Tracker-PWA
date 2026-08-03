@@ -115,17 +115,18 @@ exports.handler = async (event, context) => {
       const notification = userNotifications[userId];
       const { email, username, products } = notification;
 
-      // --- EMAIL NOTIFICATION ---
+      // --- EMAIL NOTIFICATION (one email per user with all expired products) ---
       const productListHtml = products.map(p =>
-        `<li><b>${p.productName}</b> in home '<em>${p.homeName}</em>' expired on ${p.expiryDate}.</li>`
+        `<tr><td style="padding:4px 8px;border:1px solid #ddd;">${p.productName}</td><td style="padding:4px 8px;border:1px solid #ddd;">${p.homeName}</td><td style="padding:4px 8px;border:1px solid #ddd;">${p.expiryDate}</td></tr>`
       ).join('');
+
+      const productTable = `<table style="border-collapse:collapse;width:100%;margin:10px 0;"><thead><tr style="background:#f44336;color:#fff;"><th style="padding:6px 8px;border:1px solid #ddd;">Product</th><th style="padding:6px 8px;border:1px solid #ddd;">Home</th><th style="padding:6px 8px;border:1px solid #ddd;">Expired On</th></tr></thead><tbody>${productListHtml}</tbody></table>`;
 
       const templateParams = {
         email: email,
-        to_name: username,
-        username: username,
-        product_list_html: `<ul>${productListHtml}</ul>`,
-        item_count: products.length,
+        userName: username,
+        productList: productTable,
+        itemCount: products.length,
       };
 
       try {
@@ -133,11 +134,10 @@ exports.handler = async (event, context) => {
           publicKey: EMAILJS_PUBLIC_KEY,
           privateKey: EMAILJS_PRIVATE_KEY,
         });
-        console.log(`Email sent to ${email}`);
+        console.log(`Email sent to ${email} (${products.length} expired products)`);
       } catch (emailError) {
         console.error(`Failed to send email to ${email}:`, emailError);
       }
-
       // --- PUSH NOTIFICATION ---
       if (pushEnabled) {
         try {
