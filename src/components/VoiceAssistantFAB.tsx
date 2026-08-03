@@ -82,7 +82,7 @@ export const VoiceAssistantFAB = ({
         <div
           style={{
             position: 'fixed',
-            bottom: '90px',
+            bottom: '140px',
             right: '16px',
             width: 'min(320px, calc(100vw - 32px))',
             maxHeight: '400px',
@@ -247,7 +247,7 @@ export const VoiceAssistantFAB = ({
         aria-label={getAriaLabel(state)}
         style={{
           position: 'fixed',
-          bottom: '20px',
+          bottom: '70px',
           right: '24px',
           width: '56px',
           height: '56px',
@@ -273,7 +273,7 @@ export const VoiceAssistantFAB = ({
           onClick={() => setIsChatOpen(true)}
           style={{
             position: 'fixed',
-            bottom: '78px',
+            bottom: '128px',
             right: '24px',
             width: '24px',
             height: '24px',
