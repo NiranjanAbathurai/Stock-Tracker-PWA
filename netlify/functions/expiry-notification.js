@@ -121,7 +121,8 @@ exports.handler = async (event, context) => {
       ).join('');
 
       const templateParams = {
-        to_email: email,
+        email: email,
+        to_name: username,
         username: username,
         product_list_html: `<ul>${productListHtml}</ul>`,
         item_count: products.length,
@@ -179,12 +180,13 @@ exports.handler = async (event, context) => {
               await webpush.sendNotification(pushSubscription, pushPayload);
               console.log(`Push sent to subscription ${sub.id} for user ${userId}`);
             } catch (pushError) {
-              if (pushError.statusCode === 410 || pushError.statusCode === 404) {
-                // Subscription expired or invalid — remove from DB
-                console.log(`Removing stale subscription ${sub.id}`);
+              const code = pushError.statusCode;
+              if (code === 410 || code === 404 || code === 401 || code === 403) {
+                // Subscription expired, invalid, or VAPID mismatch — remove from DB
+                console.log(`Removing invalid subscription ${sub.id} (HTTP ${code})`);
                 await supabase.from('push_subscriptions').delete().eq('id', sub.id);
               } else {
-                console.error(`Push failed for subscription ${sub.id}:`, pushError.message);
+                console.error(`Push failed for subscription ${sub.id} (HTTP ${code}):`, pushError.message);
               }
             }
           }

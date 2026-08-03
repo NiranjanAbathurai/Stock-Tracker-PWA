@@ -15,10 +15,10 @@ export function useHomes() {
       today.setHours(0, 0, 0, 0);
 
       const homesFromApi = await api.getHomesWithProducts();
-      const formattedHomes: HomeItem[] = homesFromApi.map((home: Record<string, unknown>) => ({
+      const formattedHomes: HomeItem[] = homesFromApi.map((home: Record<string, unknown>, _idx: number, arr: Record<string, unknown>[]) => ({
         id: home.id as number,
         name: home.name as string,
-        expanded: false,
+        expanded: arr.length === 1, // Auto-expand if only one home
         filters: { availability: 'all' as const, stockType: 'all' },
         products: ((home.products as Array<Record<string, unknown>>) || []).map((p) => {
           const expiryDate = p.expiry_date ? new Date(p.expiry_date as string) : null;
@@ -79,6 +79,20 @@ export function useHomes() {
   }, []);
 
   const addProduct = useCallback(async (homeId: number, initialData?: Partial<Omit<Product, 'id' | 'isExpired'>>) => {
+    // Check for duplicate product name in the same home
+    const productName = (initialData?.product || '').trim().toLowerCase();
+    if (productName) {
+      const home = homes.find(h => h.id === homeId);
+      if (home) {
+        const duplicate = home.products.find(
+          p => p.product.trim().toLowerCase() === productName
+        );
+        if (duplicate) {
+          throw new Error(`"${initialData?.product}" already exists in this home.`);
+        }
+      }
+    }
+
     const newProductData = {
       stockType: initialData?.stockType || '',
       product: initialData?.product || '',
@@ -99,7 +113,7 @@ export function useHomes() {
       h.id === homeId ? { ...h, products: [...h.products, newProduct] } : h
     ));
     return newProduct;
-  }, []);
+  }, [homes]);
 
   const deleteProduct = useCallback(async (homeId: number, productId: number) => {
     await api.removeProduct(productId);
@@ -113,6 +127,20 @@ export function useHomes() {
   }, []);
 
   const updateProduct = useCallback(async (homeId: number, productId: number, fields: Partial<Product>) => {
+    // Check for duplicate product name in the same home
+    if (fields.product !== undefined && fields.product.trim()) {
+      const home = homes.find(h => h.id === homeId);
+      if (home) {
+        const duplicate = home.products.find(
+          p => p.id !== productId && p.product.trim().toLowerCase() === fields.product!.trim().toLowerCase()
+        );
+        if (duplicate) {
+          alert(`"${fields.product}" already exists in this home.`);
+          return;
+        }
+      }
+    }
+
     // Optimistic UI update
     setHomes((prev) =>
       prev.map((home) =>
@@ -128,7 +156,7 @@ export function useHomes() {
       // Reload on failure
       loadHomes();
     }
-  }, [loadHomes]);
+  }, [homes, loadHomes]);
 
   const updateHomeFilters = useCallback((homeId: number, filters: Partial<HomeItem['filters']>) => {
     setHomes((prev) =>
