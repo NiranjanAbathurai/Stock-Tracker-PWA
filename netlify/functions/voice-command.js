@@ -11,15 +11,17 @@ const GEMINI_KEYS = buildKeyChain();
 
 function buildKeyChain() {
   const chain = [];
+  const usedKeys = new Set();
 
   // Primary key (Jio Gemini Pro subscription)
   if (process.env.GEMINI_API_KEY_PRIMARY) {
     chain.push({
       key: process.env.GEMINI_API_KEY_PRIMARY,
-      model: process.env.GEMINI_MODEL_PRIMARY || 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL_PRIMARY || 'gemini-2.0-flash',
       baseUrl: process.env.GEMINI_BASE_URL_PRIMARY || 'https://generativelanguage.googleapis.com/v1beta',
-      label: 'Primary (Jio Pro)'
+      label: 'Primary'
     });
+    usedKeys.add(process.env.GEMINI_API_KEY_PRIMARY);
   }
 
   // Fallback key (free Google AI Studio key)
@@ -28,17 +30,18 @@ function buildKeyChain() {
       key: process.env.GEMINI_API_KEY_FALLBACK,
       model: process.env.GEMINI_MODEL_FALLBACK || 'gemini-2.0-flash',
       baseUrl: process.env.GEMINI_BASE_URL_FALLBACK || 'https://generativelanguage.googleapis.com/v1beta',
-      label: 'Fallback (Free tier)'
+      label: 'Fallback'
     });
+    usedKeys.add(process.env.GEMINI_API_KEY_FALLBACK);
   }
 
-  // Legacy single-key support (backward compatible)
-  if (chain.length === 0 && process.env.GEMINI_API_KEY) {
+  // Legacy key — always included as last resort (unless it's the same key already in the chain)
+  if (process.env.GEMINI_API_KEY && !usedKeys.has(process.env.GEMINI_API_KEY)) {
     chain.push({
       key: process.env.GEMINI_API_KEY,
-      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
       baseUrl: process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
-      label: 'Default'
+      label: 'Legacy'
     });
   }
 
@@ -213,8 +216,8 @@ async function fetchWithRetry(url, options, maxRetries = 1) {
   return response;
 }
 
-// Statuses that indicate quota/rate limit exhaustion → should fallback to next key
-const FALLBACK_STATUSES = [429, 403, 503];
+// Statuses that indicate quota/rate limit exhaustion or model not found → should fallback to next key
+const FALLBACK_STATUSES = [429, 403, 404, 503];
 
 exports.handler = async (event) => {
   // CORS headers
