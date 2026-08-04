@@ -1,6 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import type { Product, AvailabilityStatus } from '../../types';
 import * as api from '../../services/homeApi';
+import { useHomes } from '../../hooks/useHomes';
+
+// Default stock categories
+const DEFAULT_CATEGORIES = [
+  'Grocery',
+  'Vegetables',
+  'Fruits',
+  'Dairy',
+  'Snacks',
+  'Beverages',
+  'Cleaning',
+  'Personal Care',
+  'Medicine',
+  'Spices',
+  'Frozen',
+  'Bakery',
+  'Others',
+];
 
 interface EditProductModalProps {
   isOpen: boolean;
@@ -14,7 +32,7 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
   isOpen,
   onClose,
   product,
-  homeId: _homeId,
+  homeId,
   onProductUpdated,
 }) => {
   const [name, setName] = useState(product.product);
@@ -26,6 +44,37 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [categorySearch, setCategorySearch] = useState(product.stockType);
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const categoryRef = useRef<HTMLDivElement>(null);
+
+  const { homes } = useHomes();
+
+  // Merge default categories with any custom categories from existing products
+  const categoryOptions = useMemo(() => {
+    const customCats = new Set<string>();
+    const selectedHome = homes.find((h) => h.id === homeId);
+    if (selectedHome) {
+      selectedHome.products.forEach((p) => {
+        if (p.stockType && p.stockType.trim() && !DEFAULT_CATEGORIES.includes(p.stockType.trim())) {
+          customCats.add(p.stockType.trim());
+        }
+      });
+    }
+    // Also include the current product's category if it's not in the list
+    if (product.stockType && product.stockType.trim() && !DEFAULT_CATEGORIES.includes(product.stockType.trim())) {
+      customCats.add(product.stockType.trim());
+    }
+    return [...DEFAULT_CATEGORIES, ...Array.from(customCats).sort()];
+  }, [homes, homeId, product.stockType]);
+
+  // Filtered categories based on search input
+  const filteredCategories = useMemo(() => {
+    if (!categorySearch.trim()) return categoryOptions;
+    return categoryOptions.filter((cat) =>
+      cat.toLowerCase().includes(categorySearch.toLowerCase())
+    );
+  }, [categoryOptions, categorySearch]);
 
   if (!isOpen) return null;
 
@@ -130,14 +179,66 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
           </div>
 
           {/* Category */}
-          <div>
+          <div ref={categoryRef} style={{ position: 'relative' }}>
             <label style={labelStyle}>Category</label>
             <input
               type="text"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              value={showCategoryDropdown ? categorySearch : category}
+              onChange={(e) => {
+                setCategorySearch(e.target.value);
+                setCategory(e.target.value);
+                setShowCategoryDropdown(true);
+              }}
+              onFocus={() => {
+                setCategorySearch(category);
+                setShowCategoryDropdown(true);
+              }}
+              onBlur={() => {
+                setTimeout(() => setShowCategoryDropdown(false), 150);
+              }}
+              placeholder="Type to search or select..."
               style={inputStyle}
             />
+            {showCategoryDropdown && filteredCategories.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  maxHeight: '150px',
+                  overflowY: 'auto',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '10px',
+                  marginTop: '4px',
+                  zIndex: 10,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                }}
+              >
+                {filteredCategories.map((cat) => (
+                  <div
+                    key={cat}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setCategory(cat);
+                      setCategorySearch(cat);
+                      setShowCategoryDropdown(false);
+                    }}
+                    style={{
+                      padding: '10px 14px',
+                      fontSize: '0.85rem',
+                      color: cat === category ? 'var(--accent-green)' : 'var(--text-primary)',
+                      cursor: 'pointer',
+                      borderBottom: '1px solid var(--border-color)',
+                      background: cat === category ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+                    }}
+                  >
+                    {cat}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Quantity */}

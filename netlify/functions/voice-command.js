@@ -4,9 +4,46 @@
 
 try { require('dotenv').config(); } catch (e) {}
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+// Multi-key fallback configuration
+// Priority: GEMINI_API_KEY_PRIMARY (Jio Pro) → GEMINI_API_KEY_FALLBACK (free tier from AI Studio)
+// If only GEMINI_API_KEY is set (legacy), it will be used as the single key.
+const GEMINI_KEYS = buildKeyChain();
+
+function buildKeyChain() {
+  const chain = [];
+
+  // Primary key (Jio Gemini Pro subscription)
+  if (process.env.GEMINI_API_KEY_PRIMARY) {
+    chain.push({
+      key: process.env.GEMINI_API_KEY_PRIMARY,
+      model: process.env.GEMINI_MODEL_PRIMARY || 'gemini-2.5-flash',
+      baseUrl: process.env.GEMINI_BASE_URL_PRIMARY || 'https://generativelanguage.googleapis.com/v1beta',
+      label: 'Primary (Jio Pro)'
+    });
+  }
+
+  // Fallback key (free Google AI Studio key)
+  if (process.env.GEMINI_API_KEY_FALLBACK) {
+    chain.push({
+      key: process.env.GEMINI_API_KEY_FALLBACK,
+      model: process.env.GEMINI_MODEL_FALLBACK || 'gemini-2.0-flash',
+      baseUrl: process.env.GEMINI_BASE_URL_FALLBACK || 'https://generativelanguage.googleapis.com/v1beta',
+      label: 'Fallback (Free tier)'
+    });
+  }
+
+  // Legacy single-key support (backward compatible)
+  if (chain.length === 0 && process.env.GEMINI_API_KEY) {
+    chain.push({
+      key: process.env.GEMINI_API_KEY,
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      baseUrl: process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
+      label: 'Default'
+    });
+  }
+
+  return chain;
+}
 
 const VOICE_COMMAND_SYSTEM_PROMPT = `You are a smart voice assistant for a Stock Tracker app. Users speak commands to manage their grocery/household stock inventory AND ask intelligent questions about their stock.
 
@@ -161,9 +198,9 @@ You MUST return ONLY a valid JSON object (no markdown, no extra text). Structure
 - User: "Any quick meal ideas?" → query, suggest quick recipes from available stock
 `;
 
-// Retry helper for transient errors
-async function fetchWithRetry(url, options, maxRetries = 2) {
-  const RETRYABLE = [429, 500, 503, 529];
+// Retry helper for transient errors (single attempt with retries)
+async function fetchWithRetry(url, options, maxRetries = 1) {
+  const RETRYABLE = [500, 503, 529];
   let response;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     response = await fetch(url, options);
@@ -175,6 +212,9 @@ async function fetchWithRetry(url, options, maxRetries = 2) {
   }
   return response;
 }
+
+// Statuses that indicate quota/rate limit exhaustion → should fallback to next key
+const FALLBACK_STATUSES = [429, 403, 503];
 
 exports.handler = async (event) => {
   // CORS headers
@@ -205,11 +245,11 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'No audio data provided.' }) };
   }
 
-  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your-gemini-api-key-here') {
+  if (GEMINI_KEYS.length === 0) {
     return {
       statusCode: 400,
       headers,
-      body: JSON.stringify({ error: 'Gemini API key not configured on the server.' })
+      body: JSON.stringify({ error: 'No Gemini API key configured. Set GEMINI_API_KEY_PRIMARY or GEMINI_API_KEY_FALLBACK in environment variables.' })
     };
   }
 
@@ -268,78 +308,119 @@ exports.handler = async (event) => {
       ]
     });
 
-    const requestBody = {
-      contents: geminiContents,
-      generationConfig: {
-        maxOutputTokens: 2048,
-        temperature: 0.3,
-        responseMimeType: "application/json",
-      },
-      systemInstruction: {
-        parts: [{ text: VOICE_COMMAND_SYSTEM_PROMPT }]
+    // Try each key in the chain until one succeeds
+    let lastError = null;
+    let lastStatus = 500;
+
+    for (let i = 0; i < GEMINI_KEYS.length; i++) {
+      const keyConfig = GEMINI_KEYS[i];
+      const isLastKey = (i === GEMINI_KEYS.length - 1);
+
+      const requestBody = {
+        contents: geminiContents,
+        generationConfig: {
+          maxOutputTokens: 2048,
+          temperature: 0.3,
+          responseMimeType: "application/json",
+        },
+        systemInstruction: {
+          parts: [{ text: VOICE_COMMAND_SYSTEM_PROMPT }]
+        }
+      };
+
+      const apiUrl = `${keyConfig.baseUrl}/models/${keyConfig.model}:generateContent?key=${keyConfig.key}`;
+
+      console.log(`[voice-command] Trying ${keyConfig.label} (model: ${keyConfig.model})...`);
+
+      const response = await fetchWithRetry(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        lastError = errorData;
+        lastStatus = response.status;
+        console.warn(`[voice-command] ${keyConfig.label} failed (${response.status}): ${errorData.substring(0, 200)}`);
+
+        // If this is a quota/rate-limit error and we have more keys, try the next one
+        if (FALLBACK_STATUSES.includes(response.status) && !isLastKey) {
+          console.log(`[voice-command] Falling back to next key...`);
+          continue;
+        }
+
+        // No more keys to try — return error
+        if (response.status === 503 || response.status === 429) {
+          return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({
+              actions: [],
+              needsMoreInfo: true,
+              spokenResponse: 'The AI is busy right now. Please try again in a few seconds.',
+              followUpQuestion: null
+            })
+          };
+        }
+        return {
+          statusCode: response.status,
+          headers,
+          body: JSON.stringify({ error: `Gemini API Error: ${errorData}` })
+        };
       }
-    };
 
-    const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+      // Success! Parse the response
+      const data = await response.json();
+      const candidate = data.candidates && data.candidates[0];
 
-    const response = await fetchWithRetry(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error("Gemini API Error (voice):", errorData);
-      if (response.status === 503 || response.status === 429) {
+      if (!candidate || !candidate.content || !candidate.content.parts[0] || !candidate.content.parts[0].text) {
+        console.error("Invalid Gemini Response (voice):", JSON.stringify(data).substring(0, 300));
+        // If invalid response but we have more keys, try next
+        if (!isLastKey) {
+          console.log(`[voice-command] Invalid response from ${keyConfig.label}, trying next key...`);
+          continue;
+        }
         return {
           statusCode: 200,
           headers,
           body: JSON.stringify({
             actions: [],
             needsMoreInfo: true,
-            spokenResponse: 'The AI is busy right now. Please try again in a few seconds.',
+            spokenResponse: 'Sorry, I could not understand that. Could you please repeat?',
             followUpQuestion: null
           })
         };
       }
-      return {
-        statusCode: response.status,
-        headers,
-        body: JSON.stringify({ error: `Gemini API Error: ${errorData}` })
-      };
-    }
 
-    const data = await response.json();
-    const candidate = data.candidates && data.candidates[0];
+      let jsonText = candidate.content.parts[0].text;
 
-    if (!candidate || !candidate.content || !candidate.content.parts[0] || !candidate.content.parts[0].text) {
-      console.error("Invalid Gemini Response (voice):", data);
+      // Defensive cleanup
+      const jsonMatch = jsonText.match(/(\{.*\})/s);
+      if (jsonMatch) {
+        jsonText = jsonMatch[0];
+      }
+
+      const parsedJson = JSON.parse(jsonText);
+      console.log(`[voice-command] Success using ${keyConfig.label}`);
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({
-          actions: [],
-          needsMoreInfo: true,
-          spokenResponse: 'Sorry, I could not understand that. Could you please repeat?',
-          followUpQuestion: null
-        })
+        body: JSON.stringify(parsedJson)
       };
     }
 
-    let jsonText = candidate.content.parts[0].text;
-
-    // Defensive cleanup
-    const jsonMatch = jsonText.match(/(\{.*\})/s);
-    if (jsonMatch) {
-      jsonText = jsonMatch[0];
-    }
-
-    const parsedJson = JSON.parse(jsonText);
+    // If we exhausted all keys without returning
+    console.error("[voice-command] All keys exhausted. Last error:", lastError);
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify(parsedJson)
+      body: JSON.stringify({
+        actions: [],
+        needsMoreInfo: true,
+        spokenResponse: 'All AI services are currently unavailable. Please try again later.',
+        followUpQuestion: null
+      })
     };
 
   } catch (error) {

@@ -1,5 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useHomes } from '../../hooks/useHomes';
+
+// Default stock categories
+const DEFAULT_CATEGORIES = [
+  'Grocery',
+  'Vegetables',
+  'Fruits',
+  'Dairy',
+  'Snacks',
+  'Beverages',
+  'Cleaning',
+  'Personal Care',
+  'Medicine',
+  'Spices',
+  'Frozen',
+  'Bakery',
+  'Others',
+];
 
 interface AddItemSheetProps {
   isOpen: boolean;
@@ -14,17 +31,44 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
   const [view, setView] = useState<SheetView>('options');
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
+  const [categorySearch, setCategorySearch] = useState('');
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [quantity, setQuantity] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [availability, setAvailability] = useState<'Yes' | 'No'>('Yes');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const categoryRef = useRef<HTMLDivElement>(null);
 
-  const { addProduct } = useHomes();
+  const { homes, addProduct } = useHomes();
+
+  // Merge default categories with any custom categories from existing products
+  const categoryOptions = useMemo(() => {
+    const customCats = new Set<string>();
+    const selectedHome = homes.find((h) => h.id === homeId);
+    if (selectedHome) {
+      selectedHome.products.forEach((p) => {
+        if (p.stockType && p.stockType.trim() && !DEFAULT_CATEGORIES.includes(p.stockType.trim())) {
+          customCats.add(p.stockType.trim());
+        }
+      });
+    }
+    return [...DEFAULT_CATEGORIES, ...Array.from(customCats).sort()];
+  }, [homes, homeId]);
+
+  // Filtered categories based on search input
+  const filteredCategories = useMemo(() => {
+    if (!categorySearch.trim()) return categoryOptions;
+    return categoryOptions.filter((cat) =>
+      cat.toLowerCase().includes(categorySearch.toLowerCase())
+    );
+  }, [categoryOptions, categorySearch]);
 
   const resetForm = () => {
     setName('');
     setCategory('');
+    setCategorySearch('');
+    setShowCategoryDropdown(false);
     setQuantity('');
     setExpiryDate('');
     setAvailability('Yes');
@@ -302,12 +346,87 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
               onChange={setName}
               placeholder="e.g., Milk, Rice, Soap"
             />
-            <InputField
-              label="Category"
-              value={category}
-              onChange={setCategory}
-              placeholder="e.g., Grocery, Medicine, Cleaning"
-            />
+            <div ref={categoryRef} style={{ position: 'relative' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '0.8rem',
+                  color: 'var(--text-secondary)',
+                  marginBottom: '6px',
+                }}
+              >
+                Category
+              </label>
+              <input
+                type="text"
+                value={showCategoryDropdown ? categorySearch : category}
+                onChange={(e) => {
+                  setCategorySearch(e.target.value);
+                  setCategory(e.target.value);
+                  setShowCategoryDropdown(true);
+                }}
+                onFocus={() => {
+                  setCategorySearch(category);
+                  setShowCategoryDropdown(true);
+                }}
+                onBlur={() => {
+                  // Delay to allow click on dropdown item
+                  setTimeout(() => setShowCategoryDropdown(false), 150);
+                }}
+                placeholder="Type to search or select..."
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-color)',
+                  background: 'var(--bg-input)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.9rem',
+                  fontFamily: 'inherit',
+                  boxSizing: 'border-box',
+                }}
+              />
+              {showCategoryDropdown && filteredCategories.length > 0 && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    maxHeight: '150px',
+                    overflowY: 'auto',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '10px',
+                    marginTop: '4px',
+                    zIndex: 10,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                  }}
+                >
+                  {filteredCategories.map((cat) => (
+                    <div
+                      key={cat}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setCategory(cat);
+                        setCategorySearch(cat);
+                        setShowCategoryDropdown(false);
+                      }}
+                      style={{
+                        padding: '10px 14px',
+                        fontSize: '0.85rem',
+                        color: cat === category ? 'var(--accent-green)' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                        borderBottom: '1px solid var(--border-color)',
+                        background: cat === category ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+                      }}
+                    >
+                      {cat}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <InputField
               label="Quantity"
               value={quantity}

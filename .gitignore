@@ -25,3 +25,6 @@ npm-debug.log*
 
 # PWA dev artifacts
 dev-dist/
+
+# Local Netlify folder
+.netlify
