@@ -13,23 +13,23 @@ function buildKeyChain() {
   const chain = [];
   const usedKeys = new Set();
 
-  // Primary key
+  // Primary key — uses GEMINI_MODEL_PRIMARY or GEMINI_MODEL env var
   if (process.env.GEMINI_API_KEY_PRIMARY) {
     chain.push({
       key: process.env.GEMINI_API_KEY_PRIMARY,
-      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
-      baseUrl: process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
+      model: process.env.GEMINI_MODEL_PRIMARY || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      baseUrl: process.env.GEMINI_BASE_URL_PRIMARY || process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
       label: 'Primary'
     });
     usedKeys.add(process.env.GEMINI_API_KEY_PRIMARY);
   }
 
-  // Fallback key
+  // Fallback key — defaults to gemini-2.0-flash (works with all new keys)
   if (process.env.GEMINI_API_KEY_FALLBACK) {
     chain.push({
       key: process.env.GEMINI_API_KEY_FALLBACK,
-      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
-      baseUrl: process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
+      model: process.env.GEMINI_MODEL_FALLBACK || 'gemini-2.0-flash',
+      baseUrl: process.env.GEMINI_BASE_URL_FALLBACK || process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
       label: 'Fallback'
     });
     usedKeys.add(process.env.GEMINI_API_KEY_FALLBACK);
