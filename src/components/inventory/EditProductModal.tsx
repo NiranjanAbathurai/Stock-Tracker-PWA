@@ -18,6 +18,7 @@ const DEFAULT_CATEGORIES = [
   'Frozen',
   'Bakery',
   'Others',
+  'Masalas'
 ];
 
 interface EditProductModalProps {
