@@ -129,27 +129,51 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
 
   // ─── Image Processing ───
 
-  const fileToBase64 = (file: File): Promise<string> => {
+  // Compress image to reduce size for API (max ~800KB base64)
+  const compressImage = (file: File, maxWidth = 1024, quality = 0.7): Promise<{ base64: string; mimeType: string }> => {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        const base64 = result.split(',')[1];
-        resolve(base64);
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+
+        // Scale down if too large
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Convert to JPEG for smaller size
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        const base64 = dataUrl.split(',')[1];
+        resolve({ base64, mimeType: 'image/jpeg' });
       };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Failed to load image'));
+      };
+      img.src = url;
     });
   };
 
   const processImage = async (file: File) => {
     setView('processing');
-    setProcessingMessage('Analyzing image...');
+    setProcessingMessage('Compressing & analyzing image...');
     setError(null);
 
     try {
-      const base64 = await fileToBase64(file);
-      const mimeType = file.type || 'image/jpeg';
+      const { base64, mimeType } = await compressImage(file);
 
       const response = await fetch('/.netlify/functions/image-to-product', {
         method: 'POST',
