@@ -25,7 +25,16 @@ interface AddItemSheetProps {
   onItemAdded: () => void;
 }
 
-type SheetView = 'options' | 'manual';
+type SheetView = 'options' | 'manual' | 'processing' | 'review';
+
+interface ExtractedProduct {
+  product: string;
+  category: string;
+  quantity: string;
+  expiryDate: string;
+  confidence: string;
+  selected: boolean;
+}
 
 const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, onItemAdded }) => {
   const [view, setView] = useState<SheetView>('options');
@@ -39,6 +48,12 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const categoryRef = useRef<HTMLDivElement>(null);
+
+  // Image processing state
+  const [extractedProducts, setExtractedProducts] = useState<ExtractedProduct[]>([]);
+  const [processingMessage, setProcessingMessage] = useState('');
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const { homes, addProduct } = useHomes();
 
@@ -73,6 +88,8 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
     setExpiryDate('');
     setAvailability('Yes');
     setError(null);
+    setExtractedProducts([]);
+    setProcessingMessage('');
     setView('options');
   };
 
@@ -108,6 +125,121 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
   const handleClose = () => {
     resetForm();
     onClose();
+  };
+
+  // ─── Image Processing ───
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const processImage = async (file: File) => {
+    setView('processing');
+    setProcessingMessage('Analyzing image...');
+    setError(null);
+
+    try {
+      const base64 = await fileToBase64(file);
+      const mimeType = file.type || 'image/jpeg';
+
+      const response = await fetch('/.netlify/functions/image-to-product', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64, mimeType }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || `Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.products && data.products.length > 0) {
+        setExtractedProducts(
+          data.products.map((p: { product: string; category: string; quantity: string; expiryDate: string; confidence: string }) => ({
+            ...p,
+            selected: true,
+          }))
+        );
+        setProcessingMessage(data.message || `Found ${data.products.length} product(s)`);
+        setView('review');
+      } else {
+        setError(data.message || 'Could not identify products in the image.');
+        setView('options');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to process image';
+      setError(message);
+      setView('options');
+    }
+  };
+
+  const handleCameraCapture = () => {
+    if (cameraInputRef.current) {
+      cameraInputRef.current.click();
+    }
+  };
+
+  const handleUpload = () => {
+    if (uploadInputRef.current) {
+      uploadInputRef.current.click();
+    }
+  };
+
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processImage(file);
+    }
+    // Reset input so same file can be selected again
+    e.target.value = '';
+  };
+
+  const handleAddExtractedProducts = async () => {
+    const selectedProducts = extractedProducts.filter((p) => p.selected);
+    if (selectedProducts.length === 0) {
+      setError('Please select at least one product to add');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      for (const p of selectedProducts) {
+        await addProduct(homeId, {
+          product: p.product,
+          stockType: p.category,
+          quantity: p.quantity || '1',
+          expiryDate: p.expiryDate || '',
+          availability: 'Yes',
+        });
+      }
+      resetForm();
+      onItemAdded();
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to add products';
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const toggleProductSelection = (index: number) => {
+    setExtractedProducts((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, selected: !p.selected } : p))
+    );
   };
 
   if (!isOpen) return null;
@@ -184,14 +316,45 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
           Add Item
         </h2>
 
+        {/* Hidden file inputs */}
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleFileSelected}
+          style={{ display: 'none' }}
+        />
+        <input
+          ref={uploadInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileSelected}
+          style={{ display: 'none' }}
+        />
+
+        {/* Error display */}
+        {error && (
+          <div
+            style={{
+              padding: '10px 14px',
+              borderRadius: '8px',
+              background: 'rgba(239, 68, 68, 0.1)',
+              color: 'var(--accent-red)',
+              fontSize: '0.8rem',
+              marginBottom: '12px',
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {/* ─── OPTIONS VIEW ─── */}
         {view === 'options' && (
-          /* Three option cards: Camera, Upload, Manual Entry */
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
             {/* Camera */}
             <button
-              onClick={() => {
-                // Placeholder for camera functionality
-              }}
+              onClick={handleCameraCapture}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -228,9 +391,7 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
 
             {/* Upload */}
             <button
-              onClick={() => {
-                // Placeholder for upload functionality
-              }}
+              onClick={handleUpload}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -263,7 +424,7 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
                 </svg>
               </div>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-primary)', fontWeight: 500 }}>Upload</span>
-              <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>Upload bill / image</span>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>From gallery</span>
             </button>
 
             {/* Manual Entry */}
@@ -305,6 +466,141 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
           </div>
         )}
 
+        {/* ─── PROCESSING VIEW ─── */}
+        {view === 'processing' && (
+          <div style={{ textAlign: 'center', padding: '40px 16px' }}>
+            <div
+              style={{
+                width: '48px',
+                height: '48px',
+                border: '3px solid var(--border-color)',
+                borderTopColor: 'var(--accent-green)',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                margin: '0 auto 16px',
+              }}
+            />
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+              {processingMessage}
+            </p>
+          </div>
+        )}
+
+        {/* ─── REVIEW VIEW (extracted products) ─── */}
+        {view === 'review' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <button
+              type="button"
+              onClick={() => { setView('options'); setExtractedProducts([]); }}
+              style={{
+                alignSelf: 'flex-start',
+                background: 'none',
+                border: 'none',
+                color: 'var(--accent-green)',
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                padding: '4px 0',
+                fontFamily: 'inherit',
+                marginBottom: '4px',
+              }}
+            >
+              ← Back
+            </button>
+
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
+              {processingMessage} — Select items to add:
+            </p>
+
+            {extractedProducts.map((p, index) => (
+              <div
+                key={index}
+                onClick={() => toggleProductSelection(index)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px',
+                  borderRadius: '12px',
+                  border: p.selected ? '1.5px solid var(--accent-green)' : '1.5px solid var(--border-color)',
+                  background: p.selected ? 'rgba(34, 197, 94, 0.05)' : 'var(--bg-input)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                {/* Checkbox */}
+                <div
+                  style={{
+                    width: '22px',
+                    height: '22px',
+                    borderRadius: '6px',
+                    border: p.selected ? '2px solid var(--accent-green)' : '2px solid var(--border-color)',
+                    background: p.selected ? 'var(--accent-green)' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  {p.selected && (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </div>
+
+                {/* Product info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                    {p.product}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    {p.category} • {p.quantity}{p.expiryDate ? ` • Exp: ${p.expiryDate}` : ''}
+                  </div>
+                </div>
+
+                {/* Confidence badge */}
+                <span
+                  style={{
+                    fontSize: '0.65rem',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: p.confidence === 'high' ? 'rgba(34, 197, 94, 0.15)' :
+                      p.confidence === 'medium' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: p.confidence === 'high' ? 'var(--accent-green)' :
+                      p.confidence === 'medium' ? '#eab308' : 'var(--accent-red)',
+                  }}
+                >
+                  {p.confidence}
+                </span>
+              </div>
+            ))}
+
+            <button
+              onClick={handleAddExtractedProducts}
+              disabled={isSubmitting || extractedProducts.filter(p => p.selected).length === 0}
+              style={{
+                marginTop: '8px',
+                padding: '14px',
+                borderRadius: '12px',
+                border: 'none',
+                background: 'var(--accent-green)',
+                color: '#fff',
+                fontSize: '0.95rem',
+                fontWeight: 600,
+                cursor: isSubmitting ? 'wait' : 'pointer',
+                opacity: isSubmitting ? 0.7 : 1,
+                fontFamily: 'inherit',
+                transition: 'opacity 0.2s',
+              }}
+            >
+              {isSubmitting
+                ? 'Adding...'
+                : `Add ${extractedProducts.filter(p => p.selected).length} Item(s)`}
+            </button>
+          </div>
+        )}
+
+        {/* ─── MANUAL ENTRY VIEW ─── */}
         {view === 'manual' && (
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Back button */}
@@ -326,26 +622,14 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
               ← Back
             </button>
 
-            {error && (
-              <div
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: '8px',
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  color: 'var(--accent-red)',
-                  fontSize: '0.8rem',
-                }}
-              >
-                {error}
-              </div>
-            )}
-
             <InputField
               label="Product Name *"
               value={name}
               onChange={setName}
               placeholder="e.g., Milk, Rice, Soap"
             />
+
+            {/* Category searchable dropdown */}
             <div ref={categoryRef} style={{ position: 'relative' }}>
               <label
                 style={{
@@ -370,7 +654,6 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
                   setShowCategoryDropdown(true);
                 }}
                 onBlur={() => {
-                  // Delay to allow click on dropdown item
                   setTimeout(() => setShowCategoryDropdown(false), 150);
                 }}
                 placeholder="Type to search or select..."
@@ -427,6 +710,7 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
                 </div>
               )}
             </div>
+
             <InputField
               label="Quantity"
               value={quantity}
@@ -545,6 +829,10 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
         @keyframes slideUp {
           from { transform: translateY(100%); }
           to { transform: translateY(0); }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </>
