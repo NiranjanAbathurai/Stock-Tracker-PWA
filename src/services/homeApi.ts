@@ -41,32 +41,50 @@ export async function addHome(name: string) {
   return data;
 }
 
-// UPDATE a home's name
+// UPDATE a home's name (with ownership check)
 export async function updateHomeName(homeId: number, newName: string) {
+  const user = await getCurrentUser();
   const { data, error } = await supabase
     .from('homes')
     .update({ name: newName })
     .eq('id', homeId)
+    .eq('user_id', user.id) // SECURITY: Only allow updating own homes
     .select()
     .single();
   if (error) throw error;
   return data;
 }
 
-// REMOVE a home (its products should auto-delete via cascade in DB setup)
+// REMOVE a home (with ownership check; products auto-delete via cascade)
 export async function removeHome(homeId: number) {
+  const user = await getCurrentUser();
   const { error } = await supabase
     .from('homes')
     .delete()
-    .eq('id', homeId);
+    .eq('id', homeId)
+    .eq('user_id', user.id); // SECURITY: Only allow deleting own homes
   if (error) throw error;
   return true;
 }
 
 /* ============ PRODUCTS ============ */
 
-// ADD a product to a home
+// ADD a product to a home (verifies home ownership first)
 export async function addProduct(homeId: number, productData: Omit<Product, 'id' | 'isExpired'>) {
+  const user = await getCurrentUser();
+
+  // SECURITY: Verify the home belongs to the current user before adding a product
+  const { data: homeCheck, error: homeError } = await supabase
+    .from('homes')
+    .select('id')
+    .eq('id', homeId)
+    .eq('user_id', user.id)
+    .single();
+
+  if (homeError || !homeCheck) {
+    throw new Error('Home not found or access denied.');
+  }
+
   const productToInsert = {
     home_id: homeId,
     stock_type: productData.stockType,

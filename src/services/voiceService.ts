@@ -2,6 +2,8 @@
  * Voice Service - Handles audio recording, API communication, and text-to-speech
  */
 
+import { supabase } from '../config/supabase';
+
 export type VoiceCommandResponse = {
   actions: VoiceAction[];
   needsMoreInfo: boolean;
@@ -172,7 +174,18 @@ async function blobToBase64(blob: Blob): Promise<string> {
 }
 
 /**
- * Send voice command to the backend API
+ * Get the current user's JWT access token for authenticated API calls.
+ */
+async function getAccessToken(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error('Not authenticated. Please log in again.');
+  }
+  return session.access_token;
+}
+
+/**
+ * Send voice command to the backend API (authenticated)
  */
 export async function sendVoiceCommand(
   audioBlob: Blob,
@@ -182,11 +195,15 @@ export async function sendVoiceCommand(
   catalogCategories: Array<{ name: string }>
 ): Promise<VoiceCommandResponse> {
   const base64Audio = await blobToBase64(audioBlob);
+  const token = await getAccessToken();
 
-   // Call the PWA's own Netlify function directly
+  // Call the PWA's own Netlify function with JWT auth
   const response = await fetch(`/.netlify/functions/voice-command`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
     body: JSON.stringify({
       audio: base64Audio,
       mimeType,

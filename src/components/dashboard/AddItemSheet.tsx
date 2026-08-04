@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useHomes } from '../../hooks/useHomes';
+import { supabase } from '../../config/supabase';
 
 // Default stock categories
 const DEFAULT_CATEGORIES = [
@@ -175,9 +176,16 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
     try {
       const { base64, mimeType } = await compressImage(file);
 
+      // Get JWT token for authenticated API call
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
       const response = await fetch('/.netlify/functions/image-to-product', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({ image: base64, mimeType }),
       });
 

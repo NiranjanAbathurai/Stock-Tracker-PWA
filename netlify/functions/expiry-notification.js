@@ -11,11 +11,11 @@ const emailjs = require('@emailjs/nodejs');
 const webpush = require('web-push');
 const { SUPABASE_URL, SUPABASE_SERVICE_SECRET_KEY } = require('./supabase-config');
 
-// EmailJS config
-const EMAILJS_SERVICE_ID = 'service_jzegqtm';
-const EMAILJS_TEMPLATE_ID = 'template_z4ips6l';
-const EMAILJS_PUBLIC_KEY = 'rPoWSI2KJiDg4uFaI';
-const EMAILJS_PRIVATE_KEY = 'bT2hT100y3cLHH83zsT7v';
+// EmailJS config — loaded from environment variables (never hardcode secrets!)
+const EMAILJS_SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
+const EMAILJS_TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
+const EMAILJS_PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY;
+const EMAILJS_PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY;
 
 // VAPID config for Web Push
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
@@ -28,6 +28,12 @@ exports.handler = async (event, context) => {
   // 1. Validate environment variables
   if (!SUPABASE_URL || !SUPABASE_SERVICE_SECRET_KEY) {
     const errorMessage = 'Missing required Supabase environment variables.';
+    console.error(errorMessage);
+    return { statusCode: 500, body: JSON.stringify({ error: errorMessage }) };
+  }
+
+  if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY || !EMAILJS_PRIVATE_KEY) {
+    const errorMessage = 'Missing required EmailJS environment variables (EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY).';
     console.error(errorMessage);
     return { statusCode: 500, body: JSON.stringify({ error: errorMessage }) };
   }

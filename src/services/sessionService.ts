@@ -1,27 +1,39 @@
-const STORAGE_KEY = 'stock-tracker-session-auth';
+/**
+ * Session Service — Secure session management using Supabase's built-in auth persistence.
+ *
+ * SECURITY: We no longer store passwords in localStorage.
+ * Supabase automatically stores a secure refresh token in localStorage
+ * under its own key. We only need to manage auth state transitions.
+ *
+ * This file now provides a thin wrapper for any additional session metadata
+ * (like "remember me" preference) without storing sensitive credentials.
+ */
 
-type StoredSession = {
+const SESSION_META_KEY = 'stock-tracker-session-meta';
+
+type SessionMeta = {
   email: string;
-  password: string;
+  lastLogin: number; // timestamp
 };
 
 /**
- * Save user credentials to localStorage for auto-login on next app open.
+ * Save non-sensitive session metadata (email for display, last login time).
+ * The actual auth token is managed by Supabase internally.
  */
-export function saveSession(email: string, password: string): void {
-  const session: StoredSession = { email, password };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+export function saveSessionMeta(email: string): void {
+  const meta: SessionMeta = { email, lastLogin: Date.now() };
+  localStorage.setItem(SESSION_META_KEY, JSON.stringify(meta));
 }
 
 /**
- * Retrieve stored credentials. Returns null if none exist.
+ * Retrieve session metadata. Returns null if none exist.
  */
-export function getStoredSession(): StoredSession | null {
+export function getSessionMeta(): SessionMeta | null {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(SESSION_META_KEY);
     if (!stored) return null;
-    const parsed = JSON.parse(stored) as StoredSession;
-    if (parsed.email && parsed.password) {
+    const parsed = JSON.parse(stored) as SessionMeta;
+    if (parsed.email) {
       return parsed;
     }
     return null;
@@ -31,8 +43,25 @@ export function getStoredSession(): StoredSession | null {
 }
 
 /**
- * Clear stored session (on logout or auth failure).
+ * Clear session metadata (on logout).
  */
-export function clearSession(): void {
-  localStorage.removeItem(STORAGE_KEY);
+export function clearSessionMeta(): void {
+  localStorage.removeItem(SESSION_META_KEY);
+}
+
+// ─── Migration: Remove old insecure session data ───
+// If the old format exists (with password), remove it immediately
+const OLD_STORAGE_KEY = 'stock-tracker-session-auth';
+
+export function migrateOldSession(): void {
+  try {
+    const oldData = localStorage.getItem(OLD_STORAGE_KEY);
+    if (oldData) {
+      // Remove the insecure password storage immediately
+      localStorage.removeItem(OLD_STORAGE_KEY);
+      console.info('[Security] Removed legacy password storage from localStorage.');
+    }
+  } catch {
+    // Silently ignore errors during migration
+  }
 }

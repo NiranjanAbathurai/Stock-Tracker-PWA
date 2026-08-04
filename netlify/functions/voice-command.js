@@ -1,8 +1,12 @@
 // Netlify Serverless Function: voice-command.js
 // Handles voice commands for the Stock Tracker PWA
 // Sends audio to Gemini AI and returns structured actions
+//
+// SECURITY: Requires authenticated user (JWT), rate-limited, input-validated
 
 try { require('dotenv').config(); } catch (e) {}
+
+const { verifyAuth, checkRateLimit, getOriginHeader, validatePayload } = require('./auth-helper');
 
 // Multi-key fallback configuration
 // Priority: GEMINI_API_KEY_PRIMARY (Jio Pro) → GEMINI_API_KEY_FALLBACK (free tier from AI Studio)
@@ -61,7 +65,7 @@ const VOICE_COMMAND_SYSTEM_PROMPT = `You are a smart voice assistant for a Stock
 - If the user speaks in English, respond in English.
 - If the user speaks in Tanglish (Tamil words in English script like "muttai add pannu"), respond in Tanglish the same way.
 - If you cannot determine the language, default to English.
-- The "userTranscript" field must be the exact transcription of what the user said (in whatever language/script they spoke).
+- The "userTranscript" field must be the exact transcription of what the user said in whatever language/script they spoke.
 - The "spokenResponse" field must be in the detected language using proper script (Tamil script for Tamil, English for English).
 - However, the "product", "stockType", and "targetHome" fields in actions MUST always be in English for database consistency (translate if needed).
 
@@ -220,10 +224,11 @@ async function fetchWithRetry(url, options, maxRetries = 1) {
 const FALLBACK_STATUSES = [429, 403, 404, 503];
 
 exports.handler = async (event) => {
-  // CORS headers
+  // ─── CORS Headers (restricted to app domain) ───
+  const origin = getOriginHeader(event);
   const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Content-Type': 'application/json'
   };
@@ -241,11 +246,59 @@ exports.handler = async (event) => {
     };
   }
 
+  // ─── SECURITY: Verify JWT Authentication ───
+  const { user, error: authError } = await verifyAuth(event);
+  if (authError) {
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({ error: authError })
+    };
+  }
+
+  // ─── SECURITY: Rate Limiting (20 requests per hour per user) ───
+  const { allowed, remaining, resetIn } = checkRateLimit(user.id, 20, 60 * 60 * 1000);
+  if (!allowed) {
+    const resetMinutes = Math.ceil(resetIn / 60000);
+    return {
+      statusCode: 429,
+      headers: { ...headers, 'Retry-After': String(Math.ceil(resetIn / 1000)) },
+      body: JSON.stringify({
+        error: `Rate limit exceeded. You can make 20 voice commands per hour. Try again in ${resetMinutes} minutes.`,
+        actions: [],
+        needsMoreInfo: true,
+        spokenResponse: `You've used too many voice commands. Please wait ${resetMinutes} minutes and try again.`,
+        followUpQuestion: null
+      })
+    };
+  }
+
+  // ─── SECURITY: Input Validation ───
+  const { valid, error: validationError } = validatePayload(event, 5 * 1024 * 1024); // 5MB max
+  if (!valid) {
+    return {
+      statusCode: 400,
+      headers,
+      body: JSON.stringify({ error: validationError })
+    };
+  }
+
   const body = JSON.parse(event.body || '{}');
   const { audio, mimeType, homes, conversationHistory, catalogCategories } = body;
 
   if (!audio) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'No audio data provided.' }) };
+  }
+
+  // Validate MIME type
+  const audioMime = mimeType || 'audio/webm';
+  if (!audioMime.startsWith('audio/')) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid audio MIME type.' }) };
+  }
+
+  // Validate homes array isn't absurdly large
+  if (homes && homes.length > 50) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Too many homes in request.' }) };
   }
 
   if (GEMINI_KEYS.length === 0) {
@@ -297,7 +350,6 @@ exports.handler = async (event) => {
     }
 
     // Add the current audio message
-    const audioMime = mimeType || 'audio/webm';
     geminiContents.push({
       role: 'user',
       parts: [
@@ -333,7 +385,7 @@ exports.handler = async (event) => {
 
       const apiUrl = `${keyConfig.baseUrl}/models/${keyConfig.model}:generateContent?key=${keyConfig.key}`;
 
-      console.log(`[voice-command] Trying ${keyConfig.label} (model: ${keyConfig.model})...`);
+      console.log(`[voice-command] User: ${user.email} | Trying ${keyConfig.label} (model: ${keyConfig.model}) | Remaining: ${remaining}`);
 
       const response = await fetchWithRetry(apiUrl, {
         method: 'POST',
@@ -405,7 +457,7 @@ exports.handler = async (event) => {
       }
 
       const parsedJson = JSON.parse(jsonText);
-      console.log(`[voice-command] Success using ${keyConfig.label}`);
+      console.log(`[voice-command] Success using ${keyConfig.label} for user ${user.email}`);
       return {
         statusCode: 200,
         headers,

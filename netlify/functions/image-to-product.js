@@ -1,8 +1,12 @@
 // Netlify Serverless Function: image-to-product.js
 // Takes an image (photo of product/bill/receipt) and uses Gemini Vision AI
 // to extract product details (name, category, quantity, expiry date)
+//
+// SECURITY: Requires authenticated user (JWT), rate-limited, input-validated
 
 try { require('dotenv').config(); } catch (e) {}
+
+const { verifyAuth, checkRateLimit, getOriginHeader, validatePayload } = require('./auth-helper');
 
 // Reuse the same multi-key fallback logic as voice-command
 function buildKeyChain() {
@@ -101,9 +105,11 @@ async function fetchWithRetry(url, options, maxRetries = 1) {
 }
 
 exports.handler = async (event) => {
+  // ─── CORS Headers (restricted to app domain) ───
+  const origin = getOriginHeader(event);
   const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Content-Type': 'application/json'
   };
@@ -116,11 +122,51 @@ exports.handler = async (event) => {
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
+  // ─── SECURITY: Verify JWT Authentication ───
+  const { user, error: authError } = await verifyAuth(event);
+  if (authError) {
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({ error: authError })
+    };
+  }
+
+  // ─── SECURITY: Rate Limiting (30 image scans per hour per user) ───
+  const { allowed, remaining, resetIn } = checkRateLimit(`img-${user.id}`, 30, 60 * 60 * 1000);
+  if (!allowed) {
+    const resetMinutes = Math.ceil(resetIn / 60000);
+    return {
+      statusCode: 429,
+      headers: { ...headers, 'Retry-After': String(Math.ceil(resetIn / 1000)) },
+      body: JSON.stringify({
+        products: [],
+        message: `Rate limit exceeded. You can scan 30 images per hour. Try again in ${resetMinutes} minutes.`
+      })
+    };
+  }
+
+  // ─── SECURITY: Input Validation (max 5MB for images) ───
+  const { valid, error: validationError } = validatePayload(event, 5 * 1024 * 1024);
+  if (!valid) {
+    return {
+      statusCode: 400,
+      headers,
+      body: JSON.stringify({ error: validationError })
+    };
+  }
+
   const body = JSON.parse(event.body || '{}');
   const { image, mimeType } = body;
 
   if (!image) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'No image data provided.' }) };
+  }
+
+  // Validate MIME type
+  const imageMime = mimeType || 'image/jpeg';
+  if (!imageMime.startsWith('image/')) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid image MIME type. Must be image/*.' }) };
   }
 
   if (GEMINI_KEYS.length === 0) {
@@ -132,8 +178,6 @@ exports.handler = async (event) => {
   }
 
   try {
-    const imageMime = mimeType || 'image/jpeg';
-
     const geminiContents = [{
       role: 'user',
       parts: [
@@ -166,7 +210,7 @@ exports.handler = async (event) => {
 
       const apiUrl = `${keyConfig.baseUrl}/models/${keyConfig.model}:generateContent?key=${keyConfig.key}`;
 
-      console.log(`[image-to-product] Trying ${keyConfig.label} (model: ${keyConfig.model})...`);
+      console.log(`[image-to-product] User: ${user.email} | Trying ${keyConfig.label} (model: ${keyConfig.model}) | Remaining: ${remaining}`);
 
       const response = await fetchWithRetry(apiUrl, {
         method: 'POST',
@@ -226,7 +270,7 @@ exports.handler = async (event) => {
       }
 
       const parsedJson = JSON.parse(jsonText);
-      console.log(`[image-to-product] Success using ${keyConfig.label}`);
+      console.log(`[image-to-product] Success using ${keyConfig.label} for user ${user.email}`);
       return {
         statusCode: 200,
         headers,

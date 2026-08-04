@@ -58,13 +58,22 @@ export default defineConfig({
         clientsClaim: true,
         runtimeCaching: [
           {
+            // SECURITY: Auth endpoints should never be cached
+            urlPattern: /^https:\/\/mskobghlcvvvlljfkbpr\.supabase\.co\/auth\/.*/i,
+            handler: 'NetworkOnly',
+            options: {
+              cacheName: 'supabase-auth-no-cache',
+            },
+          },
+          {
+            // Data API: Cache with shorter TTL (1 hour instead of 24)
             urlPattern: /^https:\/\/mskobghlcvvvlljfkbpr\.supabase\.co\/rest\/v1\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-api-cache',
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24, // 24 hours
+                maxAgeSeconds: 60 * 60, // 1 hour (reduced from 24h for fresher data)
               },
               cacheableResponse: {
                 statuses: [0, 200],
