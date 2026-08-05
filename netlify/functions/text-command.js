@@ -1,51 +1,68 @@
 // Netlify Serverless Function: text-command.js
 // Handles TEXT-based commands for the Stock Tracker PWA chatbot.
+// Supports BOTH Gemini and Groq as AI providers with automatic fallback.
 // Lighter than voice-command (no audio processing, smaller prompt, fewer tokens).
 //
 // SECURITY: Requires authenticated user (JWT), rate-limited, input-validated
+//
+// Provider chain: Gemini Primary → Groq → Gemini Fallback
 
 try { require('dotenv').config(); } catch (e) {}
 
 const { verifyAuth, checkRateLimit, getOriginHeader, validatePayload } = require('./auth-helper');
 
-// Multi-key fallback
-function buildKeyChain() {
+// Build provider chain: Gemini keys + Groq key
+function buildProviderChain() {
   const chain = [];
-  const usedKeys = new Set();
 
+  // Gemini Primary
   if (process.env.GEMINI_API_KEY_PRIMARY) {
     chain.push({
+      provider: 'gemini',
       key: process.env.GEMINI_API_KEY_PRIMARY,
       model: process.env.GEMINI_MODEL_PRIMARY || 'gemini-2.0-flash',
       baseUrl: process.env.GEMINI_BASE_URL_PRIMARY || 'https://generativelanguage.googleapis.com/v1beta',
-      label: 'Primary'
+      label: 'Gemini Primary'
     });
-    usedKeys.add(process.env.GEMINI_API_KEY_PRIMARY);
   }
 
+  // Groq (free tier: 30 req/min, 14,400 req/day!)
+  if (process.env.GROQ_API_KEY) {
+    chain.push({
+      provider: 'groq',
+      key: process.env.GROQ_API_KEY,
+      model: process.env.GROQ_MODEL || 'llama-3.1-70b-versatile',
+      baseUrl: 'https://api.groq.com/openai/v1',
+      label: 'Groq'
+    });
+  }
+
+  // Gemini Fallback
   if (process.env.GEMINI_API_KEY_FALLBACK) {
     chain.push({
+      provider: 'gemini',
       key: process.env.GEMINI_API_KEY_FALLBACK,
       model: process.env.GEMINI_MODEL_FALLBACK || 'gemini-2.0-flash',
       baseUrl: process.env.GEMINI_BASE_URL_FALLBACK || 'https://generativelanguage.googleapis.com/v1beta',
-      label: 'Fallback'
+      label: 'Gemini Fallback'
     });
-    usedKeys.add(process.env.GEMINI_API_KEY_FALLBACK);
   }
 
-  if (process.env.GEMINI_API_KEY && !usedKeys.has(process.env.GEMINI_API_KEY)) {
+  // Legacy Gemini key
+  if (process.env.GEMINI_API_KEY && !chain.some(c => c.key === process.env.GEMINI_API_KEY)) {
     chain.push({
+      provider: 'gemini',
       key: process.env.GEMINI_API_KEY,
       model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
       baseUrl: process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
-      label: 'Legacy'
+      label: 'Gemini Legacy'
     });
   }
 
   return chain;
 }
 
-const GEMINI_KEYS = buildKeyChain();
+const PROVIDER_CHAIN = buildProviderChain();
 const FALLBACK_STATUSES = [429, 403, 404, 503];
 
 // Shorter system prompt for text commands (saves tokens!)
@@ -142,8 +159,8 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'No text command provided.' }) };
   }
 
-  if (GEMINI_KEYS.length === 0) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'No Gemini API key configured.' }) };
+  if (PROVIDER_CHAIN.length === 0) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'No AI provider configured. Set GEMINI_API_KEY_PRIMARY or GROQ_API_KEY.' }) };
   }
 
   try {
@@ -170,57 +187,51 @@ exports.handler = async (event) => {
       context += `Categories: ${catalogCategories.map(c => c.name || c).join(', ')}\n`;
     }
 
-    // Build conversation
-    const geminiContents = [];
-    if (conversationHistory && conversationHistory.length > 0) {
-      for (const msg of conversationHistory.slice(-4)) { // Only last 4 messages for text
-        geminiContents.push({
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: msg.text }]
-        });
-      }
-    }
+    const userMessage = `Command: "${text}"\n\n${context}\nProcess this and return JSON.`;
 
-    geminiContents.push({
-      role: 'user',
-      parts: [{ text: `Command: "${text}"\n\n${context}\nProcess this and return JSON.` }]
-    });
+    // Try each provider in the chain
+    for (let i = 0; i < PROVIDER_CHAIN.length; i++) {
+      const provider = PROVIDER_CHAIN[i];
+      const isLastProvider = (i === PROVIDER_CHAIN.length - 1);
 
-    // Try each key
-    for (let i = 0; i < GEMINI_KEYS.length; i++) {
-      const keyConfig = GEMINI_KEYS[i];
-      const isLastKey = (i === GEMINI_KEYS.length - 1);
+      console.log(`[text-command] User: ${user.email} | Trying ${provider.label} (${provider.model}) | Remaining: ${remaining}`);
 
-      const requestBody = {
-        contents: geminiContents,
-        generationConfig: {
-          maxOutputTokens: 1024, // Less than voice (2048) — text responses are shorter
-          temperature: 0.2,
-          responseMimeType: "application/json",
-        },
-        systemInstruction: {
-          parts: [{ text: TEXT_COMMAND_SYSTEM_PROMPT }]
-        }
-      };
+      try {
+        let responseText;
 
-      const apiUrl = `${keyConfig.baseUrl}/models/${keyConfig.model}:generateContent?key=${keyConfig.key}`;
-      console.log(`[text-command] User: ${user.email} | ${keyConfig.label} | Remaining: ${remaining}`);
-
-      const response = await fetchWithRetry(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        console.warn(`[text-command] ${keyConfig.label} failed (${response.status})`);
-
-        if (FALLBACK_STATUSES.includes(response.status) && !isLastKey) {
-          continue;
+        if (provider.provider === 'groq') {
+          // ─── GROQ API (OpenAI-compatible format) ───
+          responseText = await callGroq(provider, userMessage, conversationHistory);
+        } else {
+          // ─── GEMINI API ───
+          responseText = await callGemini(provider, userMessage, conversationHistory);
         }
 
-        if (response.status === 503 || response.status === 429) {
+        if (!responseText) {
+          if (!isLastProvider) continue;
+          return {
+            statusCode: 200, headers,
+            body: JSON.stringify({
+              actions: [], needsMoreInfo: true,
+              spokenResponse: 'Could not understand. Please try again.',
+              userTranscript: text, followUpQuestion: null
+            })
+          };
+        }
+
+        // Parse JSON from response
+        const jsonMatch = responseText.match(/(\{.*\})/s);
+        const jsonText = jsonMatch ? jsonMatch[0] : responseText;
+        const parsedJson = JSON.parse(jsonText);
+
+        if (!parsedJson.userTranscript) parsedJson.userTranscript = text;
+
+        console.log(`[text-command] Success via ${provider.label} for ${user.email}`);
+        return { statusCode: 200, headers, body: JSON.stringify(parsedJson) };
+
+      } catch (providerError) {
+        console.warn(`[text-command] ${provider.label} failed:`, providerError.message);
+        if (isLastProvider) {
           return {
             statusCode: 200, headers,
             body: JSON.stringify({
@@ -230,34 +241,9 @@ exports.handler = async (event) => {
             })
           };
         }
-        return { statusCode: response.status, headers, body: JSON.stringify({ error: `AI Error: ${errorData}` }) };
+        // Try next provider
+        continue;
       }
-
-      const data = await response.json();
-      const candidate = data.candidates?.[0];
-
-      if (!candidate?.content?.parts?.[0]?.text) {
-        if (!isLastKey) continue;
-        return {
-          statusCode: 200, headers,
-          body: JSON.stringify({
-            actions: [], needsMoreInfo: true,
-            spokenResponse: 'Could not understand. Please try again.',
-            userTranscript: text, followUpQuestion: null
-          })
-        };
-      }
-
-      let jsonText = candidate.content.parts[0].text;
-      const jsonMatch = jsonText.match(/(\{.*\})/s);
-      if (jsonMatch) jsonText = jsonMatch[0];
-
-      const parsedJson = JSON.parse(jsonText);
-      // Ensure userTranscript is set
-      if (!parsedJson.userTranscript) parsedJson.userTranscript = text;
-
-      console.log(`[text-command] Success via ${keyConfig.label} for ${user.email}`);
-      return { statusCode: 200, headers, body: JSON.stringify(parsedJson) };
     }
 
     return {
@@ -281,3 +267,87 @@ exports.handler = async (event) => {
     };
   }
 };
+
+// ─── Provider-specific API callers ───
+
+async function callGemini(provider, userMessage, conversationHistory) {
+  const geminiContents = [];
+
+  if (conversationHistory && conversationHistory.length > 0) {
+    for (const msg of conversationHistory.slice(-4)) {
+      geminiContents.push({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.text }]
+      });
+    }
+  }
+
+  geminiContents.push({ role: 'user', parts: [{ text: userMessage }] });
+
+  const requestBody = {
+    contents: geminiContents,
+    generationConfig: {
+      maxOutputTokens: 1024,
+      temperature: 0.2,
+      responseMimeType: "application/json",
+    },
+    systemInstruction: { parts: [{ text: TEXT_COMMAND_SYSTEM_PROMPT }] }
+  };
+
+  const apiUrl = `${provider.baseUrl}/models/${provider.model}:generateContent?key=${provider.key}`;
+
+  const response = await fetchWithRetry(apiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Gemini ${response.status}: ${errText.substring(0, 100)}`);
+  }
+
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+}
+
+async function callGroq(provider, userMessage, conversationHistory) {
+  // Groq uses OpenAI-compatible chat completions API
+  const messages = [
+    { role: 'system', content: TEXT_COMMAND_SYSTEM_PROMPT }
+  ];
+
+  if (conversationHistory && conversationHistory.length > 0) {
+    for (const msg of conversationHistory.slice(-4)) {
+      messages.push({
+        role: msg.role === 'assistant' ? 'assistant' : 'user',
+        content: msg.text
+      });
+    }
+  }
+
+  messages.push({ role: 'user', content: userMessage });
+
+  const response = await fetchWithRetry(`${provider.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${provider.key}`,
+    },
+    body: JSON.stringify({
+      model: provider.model,
+      messages,
+      max_tokens: 1024,
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+    })
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Groq ${response.status}: ${errText.substring(0, 100)}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || null;
+}
