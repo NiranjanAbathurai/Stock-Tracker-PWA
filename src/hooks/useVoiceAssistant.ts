@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import {
   createAudioRecorder,
   sendVoiceCommand,
+  sendTextCommand,
   speakText,
   stopSpeaking,
   isMediaRecorderSupported,
@@ -317,6 +318,83 @@ export function useVoiceAssistant({
     setChatMessages([]);
   }, []);
 
+  /**
+   * Submit a text command (typed instead of spoken).
+   * Supports bulk commands like "Add milk, eggs 6, rice 2kg - all available"
+   */
+  const submitTextCommand = useCallback(async (text: string) => {
+    if (!text.trim()) return;
+
+    try {
+      setError(null);
+      setState('processing');
+
+      // Add user message to chat
+      const userMsg: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        text: text.trim(),
+        timestamp: Date.now(),
+      };
+      setChatMessages((prev) => [...prev, userMsg]);
+      conversationRef.current.push({ role: 'user', text: text.trim() });
+
+      // Build context
+      const homeContext: HomeContext[] = homes.map((h) => ({
+        id: h.id,
+        name: h.name,
+        products: h.products.map((p) => ({
+          id: p.id,
+          product: p.product,
+          quantity: p.quantity,
+          stockType: p.stockType,
+          availability: p.availability,
+          expiryDate: p.expiryDate || '',
+        })),
+      }));
+
+      const catalogCategories = catalog.map((c) => ({ name: c.name }));
+
+      // Send text command to API
+      const response: VoiceCommandResponse = await sendTextCommand(
+        text.trim(),
+        homeContext,
+        conversationRef.current,
+        catalogCategories
+      );
+
+      // Store AI response in conversation history
+      if (response.spokenResponse) {
+        conversationRef.current.push({ role: 'assistant', text: response.spokenResponse });
+
+        const aiMsg: ChatMessage = {
+          id: `ai-${Date.now()}`,
+          role: 'assistant',
+          text: response.spokenResponse,
+          timestamp: Date.now(),
+        };
+        setChatMessages((prev) => [...prev, aiMsg]);
+
+        if (conversationRef.current.length > 6) {
+          conversationRef.current = conversationRef.current.slice(-6);
+        }
+      }
+
+      setLastResponse(response.spokenResponse);
+
+      // Execute actions if any
+      if (!response.needsMoreInfo && response.actions && response.actions.length > 0) {
+        await executeActions(response.actions);
+      }
+
+      setState('idle');
+    } catch (err) {
+      console.error('Error processing text command:', err);
+      setError('Failed to process your command. Please try again.');
+      setState('idle');
+    }
+  }, [homes, catalog]);
+
   return {
     state,
     error,
@@ -324,6 +402,7 @@ export function useVoiceAssistant({
     chatMessages,
     isSupported,
     toggleRecording,
+    submitTextCommand,
     cancel,
     clearConversation,
   };

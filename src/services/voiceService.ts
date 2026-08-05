@@ -230,6 +230,51 @@ export async function sendVoiceCommand(
   return response.json();
 }
 
+/**
+ * Send a TEXT command to the backend API (authenticated).
+ * Uses a separate, lighter endpoint (text-command) that uses fewer tokens than voice.
+ * Supports bulk commands like "Add milk, eggs 6, rice 2kg - all available"
+ */
+export async function sendTextCommand(
+  text: string,
+  homes: HomeContext[],
+  conversationHistory: ConversationMessage[],
+  catalogCategories: Array<{ name: string }>
+): Promise<VoiceCommandResponse> {
+  const token = await getAccessToken();
+
+  const response = await fetch(`/.netlify/functions/text-command`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      text,
+      homes: homes.map((h) => ({
+        id: h.id,
+        name: h.name,
+        products: h.products.map((p) => ({
+          product: p.product,
+          quantity: p.quantity,
+          stockType: p.stockType,
+          availability: p.availability,
+          expiryDate: p.expiryDate || '',
+        })),
+      })),
+      conversationHistory,
+      catalogCategories,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || `Error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 // ============================================================
 // TEXT-TO-SPEECH
 // ============================================================

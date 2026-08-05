@@ -284,15 +284,16 @@ exports.handler = async (event) => {
   }
 
   const body = JSON.parse(event.body || '{}');
-  const { audio, mimeType, homes, conversationHistory, catalogCategories } = body;
+  const { audio, text, mimeType, homes, conversationHistory, catalogCategories } = body;
 
-  if (!audio) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'No audio data provided.' }) };
+  // Must provide either audio OR text
+  if (!audio && !text) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'No audio or text command provided.' }) };
   }
 
-  // Validate MIME type
+  // Validate MIME type (only if audio is provided)
   const audioMime = mimeType || 'audio/webm';
-  if (!audioMime.startsWith('audio/')) {
+  if (audio && !audioMime.startsWith('audio/')) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid audio MIME type.' }) };
   }
 
@@ -349,19 +350,30 @@ exports.handler = async (event) => {
       }
     }
 
-    // Add the current audio message
-    geminiContents.push({
-      role: 'user',
-      parts: [
-        {
-          inlineData: {
-            mimeType: audioMime,
-            data: audio
-          }
-        },
-        { text: contextText + '\n\nPlease process the audio command above and return the JSON response.' }
-      ]
-    });
+    // Add the current message (either audio or text)
+    if (audio) {
+      // Audio input — send inline audio data
+      geminiContents.push({
+        role: 'user',
+        parts: [
+          {
+            inlineData: {
+              mimeType: audioMime,
+              data: audio
+            }
+          },
+          { text: contextText + '\n\nPlease process the audio command above and return the JSON response.' }
+        ]
+      });
+    } else {
+      // Text input — send as plain text command
+      geminiContents.push({
+        role: 'user',
+        parts: [
+          { text: `User typed this command: "${text}"\n\n${contextText}\n\nPlease process the text command above and return the JSON response. Set "userTranscript" to the exact text the user typed.` }
+        ]
+      });
+    }
 
     // Try each key in the chain until one succeeds
     let lastError = null;

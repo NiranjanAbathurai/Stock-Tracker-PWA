@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useHomes } from '../../hooks/useHomes';
 import { supabase } from '../../config/supabase';
+import ExpiryDatePicker from '../ui/ExpiryDatePicker';
 
 // Default stock categories
 const DEFAULT_CATEGORIES = [
@@ -41,6 +42,8 @@ interface ExtractedProduct {
 const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, onItemAdded }) => {
   const [view, setView] = useState<SheetView>('options');
   const [name, setName] = useState('');
+  const [nameSearch, setNameSearch] = useState('');
+  const [showNameDropdown, setShowNameDropdown] = useState(false);
   const [category, setCategory] = useState('');
   const [categorySearch, setCategorySearch] = useState('');
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
@@ -50,6 +53,7 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const categoryRef = useRef<HTMLDivElement>(null);
+  const nameRef = useRef<HTMLDivElement>(null);
 
   // Image processing state
   const [extractedProducts, setExtractedProducts] = useState<ExtractedProduct[]>([]);
@@ -58,6 +62,27 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const { homes, addProduct } = useHomes();
+
+  // Build a unique list of ALL product names across ALL homes (for autocomplete)
+  // This ensures you and your wife see the same suggestions regardless of which home
+  const allProductNames = useMemo(() => {
+    const nameSet = new Set<string>();
+    for (const home of homes) {
+      for (const p of home.products) {
+        if (p.product && p.product.trim()) {
+          nameSet.add(p.product.trim());
+        }
+      }
+    }
+    return Array.from(nameSet).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  }, [homes]);
+
+  // Filtered product name suggestions based on what user is typing
+  const filteredProductNames = useMemo(() => {
+    if (!nameSearch.trim()) return allProductNames.slice(0, 10); // Show top 10 when empty
+    const search = nameSearch.toLowerCase();
+    return allProductNames.filter((n) => n.toLowerCase().includes(search)).slice(0, 10);
+  }, [allProductNames, nameSearch]);
 
   // Merge default categories with any custom categories from existing products
   const categoryOptions = useMemo(() => {
@@ -83,6 +108,8 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
 
   const resetForm = () => {
     setName('');
+    setNameSearch('');
+    setShowNameDropdown(false);
     setCategory('');
     setCategorySearch('');
     setShowCategoryDropdown(false);
@@ -655,12 +682,95 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
               ← Back
             </button>
 
-            <InputField
-              label="Product Name *"
-              value={name}
-              onChange={setName}
-              placeholder="e.g., Milk, Rice, Soap"
-            />
+            {/* Product Name with autocomplete suggestions */}
+            <div ref={nameRef} style={{ position: 'relative' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '0.8rem',
+                  color: 'var(--text-secondary)',
+                  marginBottom: '6px',
+                }}
+              >
+                Product Name *
+              </label>
+              <input
+                type="text"
+                value={showNameDropdown ? nameSearch : name}
+                onChange={(e) => {
+                  setNameSearch(e.target.value);
+                  setName(e.target.value);
+                  setShowNameDropdown(true);
+                }}
+                onFocus={() => {
+                  setNameSearch(name);
+                  setShowNameDropdown(true);
+                }}
+                onBlur={() => {
+                  setTimeout(() => setShowNameDropdown(false), 150);
+                }}
+                placeholder="e.g., Milk, Rice, Soap"
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-color)',
+                  background: 'var(--bg-input)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.9rem',
+                  fontFamily: 'inherit',
+                  boxSizing: 'border-box',
+                }}
+              />
+              {showNameDropdown && filteredProductNames.length > 0 && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    maxHeight: '150px',
+                    overflowY: 'auto',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '10px',
+                    marginTop: '4px',
+                    zIndex: 10,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                  }}
+                >
+                  {filteredProductNames.map((productName) => (
+                    <div
+                      key={productName}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setName(productName);
+                        setNameSearch(productName);
+                        setShowNameDropdown(false);
+                        // Auto-fill category if we know it from existing products
+                        const existingProduct = homes
+                          .flatMap((h) => h.products)
+                          .find((p) => p.product === productName);
+                        if (existingProduct?.stockType && !category) {
+                          setCategory(existingProduct.stockType);
+                          setCategorySearch(existingProduct.stockType);
+                        }
+                      }}
+                      style={{
+                        padding: '10px 14px',
+                        fontSize: '0.85rem',
+                        color: productName.toLowerCase() === name.toLowerCase() ? 'var(--accent-green)' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                        borderBottom: '1px solid var(--border-color)',
+                        background: productName.toLowerCase() === name.toLowerCase() ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+                      }}
+                    >
+                      {productName}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Category searchable dropdown */}
             <div ref={categoryRef} style={{ position: 'relative' }}>
@@ -750,35 +860,11 @@ const AddItemSheet: React.FC<AddItemSheetProps> = ({ isOpen, onClose, homeId, on
               onChange={setQuantity}
               placeholder="e.g., 2 liters, 1 kg, 3 packs"
             />
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: '0.8rem',
-                  color: 'var(--text-secondary)',
-                  marginBottom: '6px',
-                }}
-              >
-                Expiry Date
-              </label>
-              <input
-                type="date"
-                value={expiryDate}
-                onChange={(e) => setExpiryDate(e.target.value)}
-                className="expiry-date-input"
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--bg-input)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.9rem',
-                  fontFamily: 'inherit',
-                  boxSizing: 'border-box',
-                }}
-              />
-            </div>
+            <ExpiryDatePicker
+              value={expiryDate}
+              onChange={setExpiryDate}
+              label="Expiry Date"
+            />
 
             <div>
               <label

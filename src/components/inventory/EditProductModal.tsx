@@ -2,6 +2,8 @@ import React, { useState, useMemo, useRef } from 'react';
 import type { Product, AvailabilityStatus } from '../../types';
 import * as api from '../../services/homeApi';
 import { useHomes } from '../../hooks/useHomes';
+import ExpiryDatePicker from '../ui/ExpiryDatePicker';
+
 
 // Default stock categories
 const DEFAULT_CATEGORIES = [
@@ -37,6 +39,8 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
   onProductUpdated,
 }) => {
   const [name, setName] = useState(product.product);
+  const [nameSearch, setNameSearch] = useState(product.product);
+  const [showNameDropdown, setShowNameDropdown] = useState(false);
   const [category, setCategory] = useState(product.stockType);
   const [quantity, setQuantity] = useState(product.quantity);
   const [expiryDate, setExpiryDate] = useState(product.expiryDate);
@@ -48,8 +52,29 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
   const [categorySearch, setCategorySearch] = useState(product.stockType);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const categoryRef = useRef<HTMLDivElement>(null);
+  const nameRef = useRef<HTMLDivElement>(null);
 
   const { homes } = useHomes();
+
+  // Build unique product name suggestions from ALL homes
+  const allProductNames = useMemo(() => {
+    const nameSet = new Set<string>();
+    for (const home of homes) {
+      for (const p of home.products) {
+        if (p.product && p.product.trim()) {
+          nameSet.add(p.product.trim());
+        }
+      }
+    }
+    return Array.from(nameSet).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  }, [homes]);
+
+  // Filtered product name suggestions
+  const filteredProductNames = useMemo(() => {
+    if (!nameSearch.trim()) return allProductNames.slice(0, 10);
+    const search = nameSearch.toLowerCase();
+    return allProductNames.filter((n) => n.toLowerCase().includes(search)).slice(0, 10);
+  }, [allProductNames, nameSearch]);
 
   // Merge default categories with any custom categories from existing products
   const categoryOptions = useMemo(() => {
@@ -168,15 +193,67 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {/* Name */}
-          <div>
+          {/* Name with autocomplete */}
+          <div ref={nameRef} style={{ position: 'relative' }}>
             <label style={labelStyle}>Product Name</label>
             <input
               type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={showNameDropdown ? nameSearch : name}
+              onChange={(e) => {
+                setNameSearch(e.target.value);
+                setName(e.target.value);
+                setShowNameDropdown(true);
+              }}
+              onFocus={() => {
+                setNameSearch(name);
+                setShowNameDropdown(true);
+              }}
+              onBlur={() => {
+                setTimeout(() => setShowNameDropdown(false), 150);
+              }}
+              placeholder="Type to search existing products..."
               style={inputStyle}
             />
+            {showNameDropdown && filteredProductNames.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  maxHeight: '150px',
+                  overflowY: 'auto',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '10px',
+                  marginTop: '4px',
+                  zIndex: 10,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                }}
+              >
+                {filteredProductNames.map((productName) => (
+                  <div
+                    key={productName}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setName(productName);
+                      setNameSearch(productName);
+                      setShowNameDropdown(false);
+                    }}
+                    style={{
+                      padding: '10px 14px',
+                      fontSize: '0.85rem',
+                      color: productName.toLowerCase() === name.toLowerCase() ? 'var(--accent-green)' : 'var(--text-primary)',
+                      cursor: 'pointer',
+                      borderBottom: '1px solid var(--border-color)',
+                      background: productName.toLowerCase() === name.toLowerCase() ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+                    }}
+                  >
+                    {productName}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Category */}
@@ -254,15 +331,11 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
           </div>
 
           {/* Expiry Date */}
-          <div>
-            <label style={labelStyle}>Expiry Date</label>
-            <input
-              type="date"
-              value={expiryDate}
-              onChange={(e) => setExpiryDate(e.target.value)}
-              style={inputStyle}
-            />
-          </div>
+          <ExpiryDatePicker
+            value={expiryDate}
+            onChange={setExpiryDate}
+            label="Expiry Date"
+          />
 
           {/* Availability Status */}
           <div>

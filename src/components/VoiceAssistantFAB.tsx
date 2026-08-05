@@ -23,6 +23,7 @@ export const VoiceAssistantFAB = ({
     chatMessages,
     isSupported,
     toggleRecording,
+    submitTextCommand,
     clearConversation,
   } = useVoiceAssistant({
     homes,
@@ -33,7 +34,9 @@ export const VoiceAssistantFAB = ({
   });
 
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [textInput, setTextInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
 
   // Draggable FAB state
   const [fabPosition, setFabPosition] = useState<{ x: number; y: number }>(() => {
@@ -294,16 +297,116 @@ export const VoiceAssistantFAB = ({
 
             <div ref={chatEndRef} />
           </div>
+
+          {/* Text Input + Mic Button for typing/speaking commands */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 12px',
+              borderTop: '1px solid var(--border-color, #334155)',
+              background: 'var(--bg-primary, #0F172A)',
+            }}
+          >
+            {/* Mic button inside chat */}
+            <button
+              type="button"
+              onClick={() => toggleRecording()}
+              disabled={state === 'processing'}
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '50%',
+                border: 'none',
+                background: state === 'recording' ? '#EF4444' : 'var(--bg-input, #334155)',
+                color: '#fff',
+                fontSize: '15px',
+                cursor: state === 'processing' ? 'wait' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                animation: state === 'recording' ? 'voicePulse 1.5s infinite' : 'none',
+                transition: 'background 0.2s',
+              }}
+              aria-label={state === 'recording' ? 'Stop recording' : 'Start recording'}
+            >
+              {state === 'recording' ? '⏹' : '🎤'}
+            </button>
+
+            <input
+              ref={textInputRef}
+              type="text"
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && textInput.trim() && state === 'idle') {
+                  submitTextCommand(textInput.trim());
+                  setTextInput('');
+                }
+              }}
+              placeholder="Type: Add milk, eggs 6, rice 2kg..."
+              disabled={state === 'processing' || state === 'recording'}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                borderRadius: '20px',
+                border: '1px solid var(--border-color, #334155)',
+                background: 'var(--bg-input, #1E293B)',
+                color: 'var(--text-primary, #F8FAFC)',
+                fontSize: '13px',
+                fontFamily: 'inherit',
+                outline: 'none',
+              }}
+            />
+
+            {/* Send button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (textInput.trim() && state === 'idle') {
+                  submitTextCommand(textInput.trim());
+                  setTextInput('');
+                }
+              }}
+              disabled={!textInput.trim() || state === 'processing'}
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '50%',
+                border: 'none',
+                background: textInput.trim() ? 'var(--accent-green, #22C55E)' : 'var(--bg-input, #334155)',
+                color: '#fff',
+                fontSize: '14px',
+                cursor: textInput.trim() ? 'pointer' : 'default',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'background 0.2s',
+              }}
+              aria-label="Send text command"
+            >
+              ➤
+            </button>
+          </div>
         </div>
       )}
 
-      {/* The FAB button — draggable */}
+      {/* The FAB button — draggable — opens chat on click */}
       <button
         type="button"
         onClick={() => {
-          // Only trigger recording if not dragged
+          // Only trigger if not dragged
           if (!hasDraggedRef.current) {
-            toggleRecording();
+            if (!isChatOpen) {
+              // First click: open chat window
+              setIsChatOpen(true);
+            } else {
+              // If chat is already open, toggle recording (mic shortcut)
+              toggleRecording();
+            }
           }
         }}
         onMouseDown={(e) => {
