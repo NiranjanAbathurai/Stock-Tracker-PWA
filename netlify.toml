@@ -38,3 +38,9 @@
 # Runs at 18:31 UTC = 12:01 AM IST
 [functions."expiry-notification"]
   schedule = "31 18 * * *"
+
+# Smart reminder notifications — twice daily
+# Morning: 4:30 UTC = 10:00 AM IST
+# Evening: 13:30 UTC = 7:00 PM IST
+[functions."smart-reminder"]
+  schedule = "30 4,13 * * *"
