@@ -142,11 +142,13 @@ export const VoiceAssistantFAB = ({
         <div
           style={{
             position: 'fixed',
-            bottom: `${window.innerHeight - fabPosition.y + 10}px`,
-            right: '16px',
-            left: fabPosition.x < window.innerWidth / 2 ? '16px' : 'auto',
-            width: 'min(320px, calc(100vw - 32px))',
-            maxHeight: '400px',
+            bottom: '80px',
+            left: '5%',
+            right: '5%',
+            width: '90%',
+            maxWidth: '400px',
+            maxHeight: '450px',
+            margin: '0 auto',
             background: 'var(--bg-card, #1E293B)',
             borderRadius: '16px',
             border: '1px solid var(--border-color, #334155)',
