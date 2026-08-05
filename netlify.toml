@@ -43,5 +43,5 @@
   # Morning:   2:30 UTC =  8:00 AM IST
   # Afternoon: 8:30 UTC =  2:00 PM IST
   # Evening:  13:30 UTC =  7:00 PM IST
-[functions."smart-reminder"]
+[functions."smart-remainder"]
   schedule = "30 2,8,13 * * *"
