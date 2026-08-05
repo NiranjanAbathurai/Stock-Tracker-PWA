@@ -324,7 +324,7 @@ export function useVoiceAssistant({
               quantity: action.quantity || '1',
               stockType: action.stockType || 'Others',
               expiryDate: '',
-              availability: 'No',
+              availability: action.availability || 'No',
             });
             break;
           }

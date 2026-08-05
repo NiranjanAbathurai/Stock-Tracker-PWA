@@ -81,8 +81,12 @@ const TEXT_COMMAND_SYSTEM_PROMPT = `You are a stock tracker assistant. Process t
 - Default quantity: "1". Match stockType from categories or use "Others"
 - For "finished/over/done/empty" → update_availability with availability="No"
 - For "back/restocked/bought" → update_availability with availability="Yes"
+- **For "add X as available" or "available stocks: X, Y"** → add with availability="Yes"
+- **For "add X as out of stock" or "out of stock: X"** → add with availability="No"
+- **Default for add actions: availability="Yes"** (items being added are assumed available unless stated otherwise)
 - Product names in actions must be in English
 - spokenResponse should be short and friendly
+- Items separated by commas, newlines, or "and" should each become a separate action
 
 ## Output (JSON only, no markdown):
 {

@@ -51,16 +51,26 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onEdit, onDelete, on
   const emoji = getCategoryEmoji(product.stockType || '');
 
   return (
-    <div style={{
-      position: 'relative',
-      background: 'var(--bg-card)',
-      borderRadius: '14px',
-      padding: '14px 16px',
-      border: '1px solid var(--border-color)',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-    }}>
+    <div
+      onClick={(e) => {
+        // Don't trigger if clicking the menu button or menu itself
+        const target = e.target as HTMLElement;
+        if (target.closest('[data-menu-trigger]') || target.closest('[data-menu-dropdown]')) return;
+        onEdit(product);
+      }}
+      style={{
+        position: 'relative',
+        background: 'var(--bg-card)',
+        borderRadius: '14px',
+        padding: '14px 16px',
+        border: '1px solid var(--border-color)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        cursor: 'pointer',
+        transition: 'background 0.15s',
+      }}
+    >
       {/* Category icon */}
       <div style={{
         width: '42px',
@@ -117,7 +127,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onEdit, onDelete, on
 
       {/* Three-dot menu button */}
       <button
-        onClick={() => setMenuOpen(true)}
+        data-menu-trigger="true"
+        onClick={(e) => {
+          e.stopPropagation();
+          setMenuOpen(true);
+        }}
         style={{
           background: 'transparent',
           border: 'none',

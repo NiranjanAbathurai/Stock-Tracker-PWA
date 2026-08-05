@@ -36,7 +36,7 @@ export const VoiceAssistantFAB = ({
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [textInput, setTextInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const textInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Draggable FAB state
   const [fabPosition, setFabPosition] = useState<{ x: number; y: number }>(() => {
@@ -142,12 +142,12 @@ export const VoiceAssistantFAB = ({
         <div
           style={{
             position: 'fixed',
-            bottom: '80px',
+            bottom: '72px',
             left: '5%',
             right: '5%',
             width: '90%',
             maxWidth: '400px',
-            maxHeight: '450px',
+            maxHeight: 'calc(100dvh - 88px)',
             margin: '0 auto',
             background: 'var(--bg-card, #1E293B)',
             borderRadius: '16px',
@@ -341,24 +341,30 @@ export const VoiceAssistantFAB = ({
               {state === 'recording' ? '⏹' : '🎤'}
             </button>
 
-            <input
+            <textarea
               ref={textInputRef}
-              type="text"
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && textInput.trim() && state === 'idle') {
+                if (e.key === 'Enter' && !e.shiftKey && textInput.trim() && state === 'idle') {
+                  e.preventDefault();
                   submitTextCommand(textInput.trim());
                   setTextInput('');
                 }
               }}
-              placeholder="Type command..."
+              placeholder="Type command... (Shift+Enter for new line)"
               disabled={state === 'processing' || state === 'recording'}
+              rows={1}
+              onInput={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                target.style.height = 'auto';
+                target.style.height = Math.min(target.scrollHeight, 80) + 'px';
+              }}
               style={{
                 flex: 1,
                 minWidth: 0,
                 padding: '7px 10px',
-                borderRadius: '18px',
+                borderRadius: '14px',
                 border: '1px solid var(--border-color, #334155)',
                 background: 'var(--bg-input, #1E293B)',
                 color: 'var(--text-primary, #F8FAFC)',
@@ -366,6 +372,10 @@ export const VoiceAssistantFAB = ({
                 fontFamily: 'inherit',
                 outline: 'none',
                 boxSizing: 'border-box',
+                resize: 'none',
+                overflow: 'hidden',
+                lineHeight: '1.4',
+                maxHeight: '80px',
               }}
             />
 

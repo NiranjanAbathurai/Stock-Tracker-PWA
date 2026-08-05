@@ -1,8 +1,14 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+// @ts-ignore — Node.js built-in, works at build time
+import pkg from './package.json' with { type: 'json' };
 
 export default defineConfig({
+  define: {
+    // Auto-reads version from package.json at build time
+    '__APP_VERSION__': JSON.stringify(pkg.version),
+  },
   server: {
     proxy: {
       // Proxy /api requests to the local Netlify functions server

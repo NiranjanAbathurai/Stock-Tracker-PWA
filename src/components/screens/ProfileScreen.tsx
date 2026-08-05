@@ -98,6 +98,17 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout }) => {
 
       {/* Logout */}
       <LogoutButton onLogout={onLogout} />
+
+      {/* Version Info */}
+      <div style={{
+        textAlign: 'center',
+        padding: '8px 0 16px',
+        color: 'var(--text-secondary)',
+        fontSize: '0.75rem',
+        opacity: 0.6,
+      }}>
+        v{__APP_VERSION__}
+      </div>
     </div>
   );
 };
