@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Tab } from '../types';
 import { useHomes } from '../hooks/useHomes';
+import { usePushNotification } from '../hooks/usePushNotification';
 import Header from './Header';
 import SideDrawer from './SideDrawer';
 import BottomNav from './BottomNav';
@@ -18,7 +19,9 @@ const AppShell: React.FC<AppShellProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedHomeId, setSelectedHomeId] = useState<number | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const { homes, addProduct, deleteProduct, updateProduct } = useHomes();
+  const { isSubscribed, toggle: toggleNotifications } = usePushNotification();
 
   // Auto-select first home when homes load
   useEffect(() => {
@@ -33,12 +36,43 @@ const AppShell: React.FC<AppShellProps> = ({ onLogout }) => {
     }
   };
 
+  const handleBellClick = async () => {
+    await toggleNotifications();
+    const newState = !isSubscribed;
+    setToastMessage(newState ? '🔔 Notifications ON' : '🔕 Notifications OFF');
+    setTimeout(() => setToastMessage(null), 2500);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Toast notification */}
+      {toastMessage && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '70px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--accent-green)',
+            borderRadius: '10px',
+            padding: '10px 20px',
+            fontSize: '0.85rem',
+            color: 'var(--text-primary)',
+            zIndex: 9999,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            animation: 'messageFadeIn 0.3s ease-out',
+          }}
+        >
+          {toastMessage}
+        </div>
+      )}
+
       {/* Header */}
       <Header
         activeTab={activeTab}
         onHamburgerClick={() => setDrawerOpen(true)}
+        onRightIconClick={handleBellClick}
       />
 
       {/* Side Drawer */}

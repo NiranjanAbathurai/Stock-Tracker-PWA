@@ -305,10 +305,13 @@ export const VoiceAssistantFAB = ({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
-              padding: '10px 12px',
+              gap: '6px',
+              padding: '8px 10px',
               borderTop: '1px solid var(--border-color, #334155)',
               background: 'var(--bg-primary, #0F172A)',
+              boxSizing: 'border-box',
+              width: '100%',
+              overflow: 'hidden',
             }}
           >
             {/* Mic button inside chat */}
@@ -317,13 +320,14 @@ export const VoiceAssistantFAB = ({
               onClick={() => toggleRecording()}
               disabled={state === 'processing'}
               style={{
-                width: '34px',
-                height: '34px',
+                width: '30px',
+                height: '30px',
+                minWidth: '30px',
                 borderRadius: '50%',
                 border: 'none',
                 background: state === 'recording' ? '#EF4444' : 'var(--bg-input, #334155)',
                 color: '#fff',
-                fontSize: '15px',
+                fontSize: '13px',
                 cursor: state === 'processing' ? 'wait' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -348,18 +352,20 @@ export const VoiceAssistantFAB = ({
                   setTextInput('');
                 }
               }}
-              placeholder="Type: Add milk, eggs 6, rice 2kg..."
+              placeholder="Type command..."
               disabled={state === 'processing' || state === 'recording'}
               style={{
                 flex: 1,
-                padding: '8px 12px',
-                borderRadius: '20px',
+                minWidth: 0,
+                padding: '7px 10px',
+                borderRadius: '18px',
                 border: '1px solid var(--border-color, #334155)',
                 background: 'var(--bg-input, #1E293B)',
                 color: 'var(--text-primary, #F8FAFC)',
                 fontSize: '13px',
                 fontFamily: 'inherit',
                 outline: 'none',
+                boxSizing: 'border-box',
               }}
             />
 
@@ -374,13 +380,14 @@ export const VoiceAssistantFAB = ({
               }}
               disabled={!textInput.trim() || state === 'processing'}
               style={{
-                width: '34px',
-                height: '34px',
+                width: '30px',
+                height: '30px',
+                minWidth: '30px',
                 borderRadius: '50%',
                 border: 'none',
                 background: textInput.trim() ? 'var(--accent-green, #22C55E)' : 'var(--bg-input, #334155)',
                 color: '#fff',
-                fontSize: '14px',
+                fontSize: '13px',
                 cursor: textInput.trim() ? 'pointer' : 'default',
                 display: 'flex',
                 alignItems: 'center',

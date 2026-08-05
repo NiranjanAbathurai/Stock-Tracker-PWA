@@ -39,8 +39,9 @@
 [functions."expiry-notification"]
   schedule = "31 18 * * *"
 
-# Smart reminder notifications — twice daily
-# Morning: 4:30 UTC = 10:00 AM IST
-# Evening: 13:30 UTC = 7:00 PM IST
+  # Smart reminder notifications — three times daily
+  # Morning:   2:30 UTC =  8:00 AM IST
+  # Afternoon: 8:30 UTC =  2:00 PM IST
+  # Evening:  13:30 UTC =  7:00 PM IST
 [functions."smart-reminder"]
-  schedule = "30 4,13 * * *"
+  schedule = "30 2,8,13 * * *"
