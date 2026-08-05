@@ -381,3 +381,70 @@ export function isSpeechSynthesisSupported(): boolean {
 export function isMediaRecorderSupported(): boolean {
   return 'MediaRecorder' in window && 'mediaDevices' in navigator;
 }
+
+// ============================================================
+// BROWSER SPEECH RECOGNITION (fallback when Gemini is exhausted)
+// ============================================================
+
+/**
+ * Check if the browser supports the Web Speech API (SpeechRecognition)
+ */
+export function isSpeechRecognitionSupported(): boolean {
+  return 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
+}
+
+/**
+ * Use the browser's built-in speech recognition to convert speech to text.
+ * FREE (runs via Google's servers on Chrome/Android) — doesn't use Gemini tokens.
+ * Supports English (Indian accent) and Tamil.
+ *
+ * @param lang - Language code: 'en-IN' for English (India), 'ta-IN' for Tamil
+ * @returns Promise that resolves with the transcribed text
+ */
+export function browserSpeechToText(lang: string = 'en-IN'): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SpeechRecognitionClass = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+
+    if (!SpeechRecognitionClass) {
+      reject(new Error('Speech recognition not supported in this browser.'));
+      return;
+    }
+
+    const recognition = new SpeechRecognitionClass();
+    recognition.lang = lang;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.continuous = false;
+
+    let resolved = false;
+
+    recognition.onresult = (event: { results: { [index: number]: { [index: number]: { transcript: string } } } }) => {
+      if (resolved) return;
+      resolved = true;
+      const transcript = event.results[0]?.[0]?.transcript || '';
+      resolve(transcript);
+    };
+
+    recognition.onerror = (event: { error: string }) => {
+      if (resolved) return;
+      resolved = true;
+      if (event.error === 'no-speech') {
+        reject(new Error('No speech detected. Please try again.'));
+      } else if (event.error === 'not-allowed') {
+        reject(new Error('Microphone permission denied.'));
+      } else {
+        reject(new Error(`Speech recognition error: ${event.error}`));
+      }
+    };
+
+    recognition.onend = () => {
+      if (!resolved) {
+        resolved = true;
+        reject(new Error('Speech recognition ended without result.'));
+      }
+    };
+
+    recognition.start();
+  });
+}

@@ -311,6 +311,14 @@ async function callGemini(provider, userMessage, conversationHistory) {
   return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
 }
 
+// Groq model fallback list — if one is retired, try the next
+const GROQ_MODEL_FALLBACKS = [
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+  'mixtral-8x7b-32768',
+  'gemma2-9b-it',
+];
+
 async function callGroq(provider, userMessage, conversationHistory) {
   // Groq uses OpenAI-compatible chat completions API
   const messages = [
@@ -328,26 +336,41 @@ async function callGroq(provider, userMessage, conversationHistory) {
 
   messages.push({ role: 'user', content: userMessage });
 
-  const response = await fetchWithRetry(`${provider.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${provider.key}`,
-    },
-    body: JSON.stringify({
-      model: provider.model,
-      messages,
-      max_tokens: 1024,
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-    })
-  });
+  // Try the configured model first, then fallbacks
+  const modelsToTry = [provider.model, ...GROQ_MODEL_FALLBACKS.filter(m => m !== provider.model)];
 
-  if (!response.ok) {
+  for (const model of modelsToTry) {
+    const response = await fetchWithRetry(`${provider.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${provider.key}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        max_tokens: 1024,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+      })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`[text-command] Groq success with model: ${model}`);
+      return data.choices?.[0]?.message?.content || null;
+    }
+
     const errText = await response.text();
+    // If model is decommissioned (400) or not found (404), try next model
+    if (response.status === 400 || response.status === 404) {
+      console.warn(`[text-command] Groq model "${model}" unavailable, trying next...`);
+      continue;
+    }
+
+    // For other errors (429 rate limit, 500 server error), throw
     throw new Error(`Groq ${response.status}: ${errText.substring(0, 100)}`);
   }
 
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || null;
+  throw new Error('All Groq models unavailable');
 }

@@ -3,6 +3,8 @@ import {
   createAudioRecorder,
   sendVoiceCommand,
   sendTextCommand,
+  browserSpeechToText,
+  isSpeechRecognitionSupported,
   speakText,
   stopSpeaking,
   isMediaRecorderSupported,
@@ -46,11 +48,17 @@ export function useVoiceAssistant({
   const recorderRef = useRef<ReturnType<typeof createAudioRecorder> | null>(null);
   const conversationRef = useRef<ConversationMessage[]>([]);
 
-  const isSupported = isMediaRecorderSupported();
+  const isSupported = isMediaRecorderSupported() || isSpeechRecognitionSupported();
+  const hasBrowserSpeech = isSpeechRecognitionSupported();
   const hasTTS = isSpeechSynthesisSupported();
 
+  // Track which mode we're using for the current recording
+  const useBrowserSpeechRef = useRef(false);
+
   /**
-   * Start recording audio
+   * Start recording/listening.
+   * Strategy: Use Browser Speech API first (free, sends text to Groq).
+   * Falls back to MediaRecorder + Gemini if Browser Speech isn't available.
    */
   const startRecording = useCallback(async () => {
     if (!isSupported) {
@@ -62,21 +70,102 @@ export function useVoiceAssistant({
       setError(null);
       setLastResponse(null);
 
-      const recorder = createAudioRecorder();
-      recorderRef.current = recorder;
+      if (hasBrowserSpeech) {
+        // Use Browser Speech API (free! → text → Groq)
+        useBrowserSpeechRef.current = true;
+        setState('recording');
+        // Speech recognition starts in stopRecording (it's a single call)
+        // Actually, we start it immediately and it auto-stops
+        setState('processing');
 
-      await recorder.start();
-      setState('recording');
+        const transcript = await browserSpeechToText('en-IN');
+
+        if (!transcript.trim()) {
+          setState('idle');
+          setError('No speech detected. Please try again.');
+          return;
+        }
+
+        // Add user message to chat
+        const userMsg: ChatMessage = {
+          id: `user-${Date.now()}`,
+          role: 'user',
+          text: transcript,
+          timestamp: Date.now(),
+        };
+        setChatMessages((prev) => [...prev, userMsg]);
+        conversationRef.current.push({ role: 'user', text: transcript });
+
+        // Send as text command (uses Groq — free!)
+        const homeContext: HomeContext[] = homes.map((h) => ({
+          id: h.id,
+          name: h.name,
+          products: h.products.map((p) => ({
+            id: p.id,
+            product: p.product,
+            quantity: p.quantity,
+            stockType: p.stockType,
+            availability: p.availability,
+            expiryDate: p.expiryDate || '',
+          })),
+        }));
+        const catalogCategories = catalog.map((c) => ({ name: c.name }));
+
+        const response: VoiceCommandResponse = await sendTextCommand(
+          transcript,
+          homeContext,
+          conversationRef.current,
+          catalogCategories
+        );
+
+        // Process response
+        if (response.spokenResponse) {
+          conversationRef.current.push({ role: 'assistant', text: response.spokenResponse });
+          const aiMsg: ChatMessage = {
+            id: `ai-${Date.now()}`,
+            role: 'assistant',
+            text: response.spokenResponse,
+            timestamp: Date.now(),
+          };
+          setChatMessages((prev) => [...prev, aiMsg]);
+          if (conversationRef.current.length > 6) {
+            conversationRef.current = conversationRef.current.slice(-6);
+          }
+        }
+
+        setLastResponse(response.spokenResponse);
+
+        if (!response.needsMoreInfo && response.actions && response.actions.length > 0) {
+          await executeActions(response.actions);
+        }
+
+        // Speak the response
+        if (hasTTS && response.spokenResponse) {
+          setState('speaking');
+          try { await speakText(response.spokenResponse); } catch { /* ignore */ }
+        }
+
+        setState('idle');
+      } else {
+        // Fallback: Use MediaRecorder + Gemini (for iOS PWA or unsupported browsers)
+        useBrowserSpeechRef.current = false;
+        const recorder = createAudioRecorder();
+        recorderRef.current = recorder;
+        await recorder.start();
+        setState('recording');
+      }
     } catch (err) {
       console.error('Failed to start recording:', err);
       if (err instanceof Error && err.name === 'NotAllowedError') {
         setError('Microphone permission denied. Please allow microphone access.');
+      } else if (err instanceof Error) {
+        setError(err.message);
       } else {
         setError('Failed to access microphone.');
       }
       setState('idle');
     }
-  }, [isSupported]);
+  }, [isSupported, hasBrowserSpeech, homes, catalog, hasTTS]);
 
   /**
    * Stop recording and process the audio

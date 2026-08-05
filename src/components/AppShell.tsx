@@ -21,7 +21,7 @@ const AppShell: React.FC<AppShellProps> = ({ onLogout }) => {
   const [selectedHomeId, setSelectedHomeId] = useState<number | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const { homes, addProduct, deleteProduct, updateProduct } = useHomes();
-  const { isSubscribed, toggle: toggleNotifications } = usePushNotification();
+  const { isSupported: pushSupported, isSubscribed, toggle: toggleNotifications } = usePushNotification();
 
   // Auto-select first home when homes load
   useEffect(() => {
@@ -37,9 +37,18 @@ const AppShell: React.FC<AppShellProps> = ({ onLogout }) => {
   };
 
   const handleBellClick = async () => {
-    await toggleNotifications();
-    const newState = !isSubscribed;
-    setToastMessage(newState ? '🔔 Notifications ON' : '🔕 Notifications OFF');
+    if (!pushSupported) {
+      setToastMessage('📱 Install the app first to enable notifications');
+      setTimeout(() => setToastMessage(null), 3000);
+      return;
+    }
+    try {
+      await toggleNotifications();
+      const newState = !isSubscribed;
+      setToastMessage(newState ? '🔔 Notifications ON' : '🔕 Notifications OFF');
+    } catch (err) {
+      setToastMessage('❌ Failed to toggle notifications. Check browser permissions.');
+    }
     setTimeout(() => setToastMessage(null), 2500);
   };
 
