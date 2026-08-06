@@ -9,23 +9,20 @@ const OverviewChart: React.FC<OverviewChartProps> = ({ products }) => {
   const total = products.length;
 
   // Count by availability status
-  // The existing Product type uses availability: 'Yes' | 'No' | ''
-  // and availability_status?: AvailabilityStatus
-  // We'll use availability_status if present, otherwise derive from availability field
-  const available = products.filter((p) => {
-    if (p.availability_status) return p.availability_status === 'available';
-    return p.availability === 'Yes' && !p.isExpired;
-  }).length;
+  // Uses availability_status when it's meaningful (not 'available' when availability='No'),
+  // otherwise falls back to the reliable availability field
+  const getEffectiveStatus = (p: Product) => {
+    if (p.isExpired) return 'out_of_stock'; // Expired = out of stock in chart
+    // Trust availability_status only if it's consistent with availability
+    // If availability='No' but status='available', the migration was incomplete — use availability
+    if (p.availability === 'No') return 'out_of_stock';
+    if (p.availability_status === 'low') return 'low';
+    return 'available';
+  };
 
-  const lowStock = products.filter((p) => {
-    if (p.availability_status) return p.availability_status === 'low';
-    return false; // Legacy products don't have low stock concept
-  }).length;
-
-  const outOfStock = products.filter((p) => {
-    if (p.availability_status) return p.availability_status === 'out_of_stock';
-    return p.availability === 'No' || p.isExpired;
-  }).length;
+  const available = products.filter((p) => getEffectiveStatus(p) === 'available').length;
+  const lowStock = products.filter((p) => getEffectiveStatus(p) === 'low').length;
+  const outOfStock = products.filter((p) => getEffectiveStatus(p) === 'out_of_stock').length;
 
   const percentage = total > 0 ? Math.round((available / total) * 100) : 0;
 
