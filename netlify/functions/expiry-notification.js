@@ -67,6 +67,7 @@ exports.handler = async (event, context) => {
     console.log(`Checking for products expired before: ${today}`);
 
     // 3. Fetch all expired products from Supabase
+    // Use availability_status to find items that are stocked (available or low) and expired
     const { data: expiredProducts, error } = await supabase
       .from('products')
       .select(`
@@ -79,7 +80,7 @@ exports.handler = async (event, context) => {
       `)
       .not('expiry_date', 'is', null)
       .lt('expiry_date', today)
-      .eq('availability', 'Yes');
+      .in('availability_status', ['available', 'low']);
 
     if (error) throw new Error(`Supabase query failed: ${error.message}`);
 

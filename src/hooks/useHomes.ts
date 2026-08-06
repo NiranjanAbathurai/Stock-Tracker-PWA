@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as api from '../services/homeApi';
-import type { HomeItem, Product } from '../types';
+import type { AvailabilityStatus, HomeItem, Product } from '../types';
 
 export function useHomes() {
   const [homes, setHomes] = useState<HomeItem[]>([]);
@@ -25,7 +25,13 @@ export function useHomes() {
           const isExpired = expiryDate !== null && expiryDate < today;
           const wasAvailable = p.availability === 'Yes';
           const isNowExpiredAndUnavailable = isExpired && wasAvailable;
+          // Display-only override: expired items show as unavailable in UI
+          // but we do NOT write this back to DB — the expiry-notification cron handles expired items separately
           const availability = isNowExpiredAndUnavailable ? 'No' : (p.availability as string);
+
+          // Read persisted availability_status from DB; fall back to deriving from availability
+          const dbStatus = p.availability_status as AvailabilityStatus | undefined;
+          const availabilityStatus: AvailabilityStatus = dbStatus || (availability === 'No' ? 'out_of_stock' : 'available');
 
           return {
             id: p.id as number,
@@ -34,6 +40,7 @@ export function useHomes() {
             quantity: (p.quantity as string) || '',
             expiryDate: (p.expiry_date as string) || '',
             availability: availability as Product['availability'],
+            availability_status: availabilityStatus,
             isExpired: isNowExpiredAndUnavailable,
           };
         }),
@@ -135,8 +142,8 @@ export function useHomes() {
           p => p.id !== productId && p.product.trim().toLowerCase() === fields.product!.trim().toLowerCase()
         );
         if (duplicate) {
-          alert(`"${fields.product}" already exists in this home.`);
-          return;
+          console.warn(`[useHomes] Duplicate product name rejected: "${fields.product}"`);
+          return; // Silently reject — callers don't await or catch
         }
       }
     }

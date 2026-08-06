@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Tab } from '../types';
 import { useHomes } from '../hooks/useHomes';
 import { usePushNotification } from '../hooks/usePushNotification';
+import { DEFAULT_CATEGORIES } from '../config/categories';
 import Header from './Header';
 import SideDrawer from './SideDrawer';
 import BottomNav from './BottomNav';
@@ -107,7 +108,7 @@ const AppShell: React.FC<AppShellProps> = ({ onLogout }) => {
       {/* Voice FAB */}
       <VoiceAssistantFAB
         homes={homes}
-        catalog={[]}
+        catalog={DEFAULT_CATEGORIES.map((name, idx) => ({ id: idx + 1, name, items: [] }))}
         onAddProduct={addProduct}
         onDeleteProduct={deleteProduct}
         onUpdateProduct={updateProduct}

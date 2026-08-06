@@ -11,11 +11,6 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // Proxy /api requests to the local Netlify functions server
-      '/api': {
-        target: 'https://niranjan-abathurai-portfolio.netlify.app',
-        changeOrigin: true,
-      },
       // Proxy /.netlify/functions to the deployed PWA's own Netlify functions
       '/.netlify/functions': {
         target: 'https://stock-tracker-pwa-nj.netlify.app',

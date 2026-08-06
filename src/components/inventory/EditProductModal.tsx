@@ -2,26 +2,8 @@ import React, { useState, useMemo, useRef } from 'react';
 import type { Product, AvailabilityStatus } from '../../types';
 import * as api from '../../services/homeApi';
 import { useHomes } from '../../hooks/useHomes';
+import { DEFAULT_CATEGORIES } from '../../config/categories';
 import ExpiryDatePicker from '../ui/ExpiryDatePicker';
-
-
-// Default stock categories
-const DEFAULT_CATEGORIES = [
-  'Grocery',
-  'Vegetables',
-  'Fruits',
-  'Dairy',
-  'Snacks',
-  'Beverages',
-  'Cleaning',
-  'Personal Care',
-  'Medicine',
-  'Spices',
-  'Frozen',
-  'Bakery',
-  'Others',
-  'Masalas'
-];
 
 interface EditProductModalProps {
   isOpen: boolean;

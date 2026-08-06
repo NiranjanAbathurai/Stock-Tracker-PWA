@@ -1,25 +1,8 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useHomes } from '../../hooks/useHomes';
 import { supabase } from '../../config/supabase';
+import { DEFAULT_CATEGORIES } from '../../config/categories';
 import ExpiryDatePicker from '../ui/ExpiryDatePicker';
-
-// Default stock categories
-const DEFAULT_CATEGORIES = [
-  'Grocery',
-  'Vegetables',
-  'Fruits',
-  'Dairy',
-  'Snacks',
-  'Beverages',
-  'Cleaning',
-  'Personal Care',
-  'Medicine',
-  'Spices',
-  'Frozen',
-  'Bakery',
-  'Others',
-  'Masalas'
-];
 
 interface AddItemSheetProps {
   isOpen: boolean;

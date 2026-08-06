@@ -4,6 +4,7 @@ import { SplashScreen } from './components/SplashScreen';
 import { SignInForm } from './components/SignInForm';
 import { SignUpForm } from './components/SignUpForm';
 import AppShell from './components/AppShell';
+import ErrorBoundary from './components/ui/ErrorBoundary';
 import { InstallPage } from './components/InstallPage';
 
 export const App = () => {
@@ -36,10 +37,10 @@ export const App = () => {
   // Show dashboard when authenticated
   if (authState === 'authenticated') {
     return (
-      <>
+      <ErrorBoundary>
         <AppShell onLogout={logout} />
         <InstallFooter />
-      </>
+      </ErrorBoundary>
     );
   }
 

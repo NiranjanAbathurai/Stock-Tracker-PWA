@@ -1,5 +1,16 @@
 import { supabase } from '../config/supabase';
-import type { Product } from '../types';
+import type { AvailabilityStatus, Product } from '../types';
+
+/**
+ * Derivation rule: availability_status → availability (Yes/No)
+ * INVARIANT: This must be consistent everywhere (client, server, Netlify functions).
+ *   - 'available' or 'low' → 'Yes' (item exists in stock)
+ *   - 'out_of_stock' → 'No' (item is finished)
+ */
+function deriveAvailability(status: AvailabilityStatus | undefined): 'Yes' | 'No' | '' {
+  if (!status) return '';
+  return status === 'out_of_stock' ? 'No' : 'Yes';
+}
 
 // Helper to get the current user
 async function getCurrentUser() {
@@ -85,13 +96,16 @@ export async function addProduct(homeId: number, productData: Omit<Product, 'id'
     throw new Error('Home not found or access denied.');
   }
 
+  // Derive availability from availability_status for consistency
+  const status = productData.availability_status || (productData.availability === 'No' ? 'out_of_stock' : 'available');
   const productToInsert = {
     home_id: homeId,
     stock_type: productData.stockType,
     product: productData.product,
     quantity: productData.quantity,
     expiry_date: productData.expiryDate || null,
-    availability: productData.availability,
+    availability: deriveAvailability(status as AvailabilityStatus) || productData.availability,
+    availability_status: status,
   };
   const { data, error } = await supabase
     .from('products')
@@ -109,7 +123,17 @@ export async function updateProduct(productId: number, fields: Partial<Product>)
   if (fields.product !== undefined) fieldsToUpdate.product = fields.product;
   if (fields.quantity !== undefined) fieldsToUpdate.quantity = fields.quantity;
   if (fields.expiryDate !== undefined) fieldsToUpdate.expiry_date = fields.expiryDate || null;
-  if (fields.availability !== undefined) fieldsToUpdate.availability = fields.availability;
+
+  // Keep availability and availability_status in sync (derivation rule)
+  if (fields.availability_status !== undefined) {
+    fieldsToUpdate.availability_status = fields.availability_status;
+    // Always derive availability from status to maintain invariant
+    fieldsToUpdate.availability = deriveAvailability(fields.availability_status);
+  } else if (fields.availability !== undefined) {
+    fieldsToUpdate.availability = fields.availability;
+    // Reverse-derive status from availability for backward compat
+    fieldsToUpdate.availability_status = fields.availability === 'No' ? 'out_of_stock' : 'available';
+  }
 
   const { data, error } = await supabase
     .from('products')

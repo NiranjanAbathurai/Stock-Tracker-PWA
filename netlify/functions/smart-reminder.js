@@ -1,11 +1,13 @@
 // Netlify Scheduled Function: smart-reminder.js
 //
-// Sends smart push notifications at 10 AM and 7 PM IST with contextual messages:
+// Sends smart push notifications three times daily with contextual messages:
 // Priority 1: Expiring/expired products → "⚠️ 3 items expiring today!"
 // Priority 2: Out of stock items → "🛒 5 items are out of stock. Time to restock?"
 // Priority 3: All good → "✅ All stocked up! What shall we cook tonight?" (evening only)
 //
-// Schedule: Runs at 4:30 UTC (10:00 AM IST) and 13:30 UTC (7:00 PM IST)
+// Schedule (netlify.toml): 2:30 UTC = 8:00 AM IST (morning),
+//                          8:30 UTC = 2:00 PM IST (afternoon),
+//                         13:30 UTC = 7:00 PM IST (evening)
 
 try { require('dotenv').config(); } catch (e) {}
 
@@ -45,9 +47,11 @@ exports.handler = async (event, context) => {
   try {
     const today = new Date().toISOString().split('T')[0];
     const currentHourUTC = new Date().getUTCHours();
-    // Determine if this is morning (10 AM IST = 4:30 UTC) or evening (7 PM IST = 13:30 UTC)
-    const isMorning = currentHourUTC < 10; // Before 10 UTC = morning IST
-    const timeLabel = isMorning ? 'morning' : 'evening';
+    // Schedule: 2:30 UTC = 8:00 AM IST (morning), 8:30 UTC = 2:00 PM IST (afternoon), 13:30 UTC = 7:00 PM IST (evening)
+    const isMorning = currentHourUTC < 5;                              // 2:30 UTC → true
+    const isAfternoon = currentHourUTC >= 5 && currentHourUTC < 11;    // 8:30 UTC → true
+    const isEvening = currentHourUTC >= 11;                            // 13:30 UTC → true
+    const timeLabel = isMorning ? 'morning' : isAfternoon ? 'afternoon' : 'evening';
 
     console.log(`[smart-reminder] Time: ${timeLabel} | Today: ${today}`);
 
@@ -79,7 +83,7 @@ exports.handler = async (event, context) => {
         // Get user's products with expiry dates
         const { data: homes, error: homesError } = await supabase
           .from('homes')
-          .select('name, products(product, quantity, expiry_date, availability, stock_type)')
+          .select('name, products(product, quantity, expiry_date, availability, availability_status, stock_type)')
           .eq('user_id', userId);
 
         if (homesError || !homes) continue;
@@ -94,6 +98,7 @@ exports.handler = async (event, context) => {
         const expiringSoon = []; // Expiring within 3 days
         const expired = [];
         const outOfStock = [];
+        const lowStock = [];
         const availableFood = [];
 
         for (const p of allProducts) {
@@ -108,8 +113,12 @@ exports.handler = async (event, context) => {
             }
           }
 
-          if (p.availability === 'No') {
+          // Use availability_status (persisted) with fallback to availability (legacy)
+          const status = p.availability_status || (p.availability === 'No' ? 'out_of_stock' : 'available');
+          if (status === 'out_of_stock') {
             outOfStock.push(p);
+          } else if (status === 'low') {
+            lowStock.push(p);
           } else {
             availableFood.push(p);
           }
@@ -149,7 +158,15 @@ exports.handler = async (event, context) => {
           body = outOfStock.length <= 4
             ? `Out of stock: ${names}. Add to your shopping list!`
             : `${outOfStock.length} items out of stock including ${names}. Time to shop!`;
-        } else if (!isMorning && availableFood.length > 3) {
+        } else if (lowStock.length > 0) {
+          // PRIORITY 2.5: Low stock nudge
+          shouldSend = true;
+          title = '⚠️ Running Low';
+          const names = lowStock.slice(0, 4).map(p => p.product).join(', ');
+          body = lowStock.length <= 4
+            ? `Running low: ${names}. Restock soon?`
+            : `${lowStock.length} items running low including ${names}. Time to restock!`;
+        } else if (isEvening && availableFood.length > 3) {
           // PRIORITY 3: Evening "what to cook" (only if everything is stocked)
           shouldSend = true;
           title = '🍳 All Stocked Up!';
@@ -169,7 +186,10 @@ exports.handler = async (event, context) => {
           // Morning: Quick status
           shouldSend = true;
           title = '📦 Good Morning!';
-          body = `You have ${allProducts.length} items tracked. ${outOfStock.length > 0 ? `${outOfStock.length} need restocking.` : 'Everything looks good! ✅'}`;
+          const issues = [];
+          if (outOfStock.length > 0) issues.push(`${outOfStock.length} out of stock`);
+          if (lowStock.length > 0) issues.push(`${lowStock.length} running low`);
+          body = `You have ${allProducts.length} items tracked. ${issues.length > 0 ? issues.join(', ') + '.' : 'Everything looks good! ✅'}`;
         }
 
         // Send notification if we have something to say
