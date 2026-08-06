@@ -4,29 +4,37 @@ import { registerSW } from 'virtual:pwa-register';
 import { App } from './App';
 import './index.css';
 
-// Register service worker with auto-update on new version.
-// `immediate: true` checks for updates on page load.
-// `onRegisteredSW` sets up periodic update checks (every 60s).
-// When a new SW is found, `onNeedRefresh` calls updateSW(true) which:
-//   1. Tells the waiting SW to skipWaiting and become active
-//   2. The browser fires 'controllerchange'
-//   3. The page reloads with fresh assets from the new SW
+// ─── Force reload when a new service worker takes control ───
+// This is the nuclear option: whenever a new SW activates and takes control,
+// reload the page immediately so the user always gets fresh assets.
+// This fires AFTER skipWaiting succeeds, guaranteeing the new SW serves the reload.
+let refreshing = false;
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (refreshing) return; // Prevent infinite reload loops
+    refreshing = true;
+    console.log('[SW] New service worker active — reloading for fresh content');
+    window.location.reload();
+  });
+}
+
+// Register service worker with auto-update
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
-    // New version detected — activate it and reload
-    console.log('[SW] New version available, updating...');
-    updateSW(true); // true = reloadPage after activation
+    // New version detected — tell the waiting SW to activate immediately
+    console.log('[SW] New version available, activating...');
+    updateSW(true);
   },
   onOfflineReady() {
     console.log('[SW] App ready for offline use');
   },
   onRegisteredSW(_swUrl, registration) {
-    // Check for updates every 60 seconds (catches deploys while app is open)
+    // Check for updates every 30 seconds (faster detection of deploys)
     if (registration) {
       setInterval(() => {
         registration.update();
-      }, 60 * 1000);
+      }, 30 * 1000);
     }
   },
 });
