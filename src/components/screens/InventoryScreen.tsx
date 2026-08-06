@@ -69,7 +69,12 @@ const InventoryScreen: React.FC<InventoryScreenProps> = ({ selectedHomeId }) => 
       }
     } else {
       const availability: Product['availability'] = status === 'out_of_stock' ? 'No' : 'Yes';
-      updateProduct(selectedHomeId, productId, { availability, availability_status: status });
+      // When marking as out of stock, clear the expiry date (it's no longer relevant)
+      const updates: Partial<Product> = { availability, availability_status: status };
+      if (status === 'out_of_stock') {
+        updates.expiryDate = '';
+      }
+      updateProduct(selectedHomeId, productId, updates);
     }
   };
 

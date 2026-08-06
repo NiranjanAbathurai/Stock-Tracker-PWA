@@ -148,9 +148,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ selectedHomeId, onSel
           width: '100%',
           padding: '14px',
           borderRadius: '12px',
-          border: 'none',
-          background: 'var(--accent-green)',
-          color: '#fff',
+          border: '2px solid var(--accent-green)',
+          background: 'rgba(34, 197, 94, 0.12)',
+          color: 'var(--accent-green)',
           fontSize: '1rem',
           fontWeight: 600,
           cursor: 'pointer',
@@ -160,6 +160,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ selectedHomeId, onSel
           justifyContent: 'center',
           gap: '8px',
           marginTop: '8px',
+          marginBottom: '70px', /* Space for the mic FAB */
         }}
       >
         <span style={{ fontSize: '1.2rem', fontWeight: 300 }}>+</span>
