@@ -166,6 +166,7 @@ export function HomesProvider({ children }: { children: React.ReactNode }) {
         quantity: newProductFromApi.quantity || '',
         expiryDate: newProductFromApi.expiry_date || '',
         availability: newProductFromApi.availability || 'Yes',
+        availability_status: newProductFromApi.availability_status || 'available'
       };
 
       // Replace temp ID with real ID from server
