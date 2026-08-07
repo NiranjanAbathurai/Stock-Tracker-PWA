@@ -135,13 +135,15 @@ export function HomesProvider({ children }: { children: React.ReactNode }) {
 
     // Optimistic: add with temporary ID immediately
     const tempId = tempIdCounter--;
+    const availability = (initialData?.availability || 'Yes') as Product['availability'];
     const optimisticProduct: Product = {
       id: tempId,
       stockType: initialData?.stockType || '',
       product: initialData?.product || '',
       quantity: initialData?.quantity || '',
       expiryDate: initialData?.expiryDate || '',
-      availability: (initialData?.availability || 'Yes') as Product['availability'],
+      availability,
+      availability_status: initialData?.availability_status || (availability === 'No' ? 'out_of_stock' : 'available'),
     };
 
     setHomes((prev) => prev.map((h) =>

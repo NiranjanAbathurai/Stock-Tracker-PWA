@@ -22,7 +22,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.png', 'icons/*.png', 'icons/*.svg', 'sw-push.js', 'offline.html'],
+      includeAssets: ['favicon.png', 'icons/*.png', 'icons/*.svg', 'sw-push.js'],
       manifest: {
         name: 'Stock Tracker',
         short_name: 'StockTracker',
@@ -83,8 +83,8 @@ export default defineConfig({
         // Force new service worker to activate immediately (no close/reopen needed)
         skipWaiting: true,
         clientsClaim: true,
-        // Offline fallback for navigation requests
-        navigateFallback: '/offline.html',
+        // SPA fallback: serve precached index.html for all navigation requests
+        navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/.netlify/, /^\/api/],
         runtimeCaching: [
           {
