@@ -14,10 +14,13 @@ interface DashboardScreenProps {
 }
 
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ selectedHomeId, onSelectHome }) => {
-  const { homes, isLoading, error, reload, updateProduct, deleteProduct } = useHomes();
+  const { homes, isLoading, error, reload, updateProduct, deleteProduct, addHome } = useHomes();
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [userName, setUserName] = useState<string>('');
+  const [newHomeName, setNewHomeName] = useState('');
+  const [isAddingHome, setIsAddingHome] = useState(false);
+  const [addHomeError, setAddHomeError] = useState<string | null>(null);
 
   // Fetch user name from Supabase
   useEffect(() => {
@@ -106,6 +109,157 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ selectedHomeId, onSel
     );
   }
 
+  // ─── Empty State: No Homes ───
+  if (homes.length === 0) {
+    const handleAddHome = async () => {
+      const name = newHomeName.trim();
+      if (!name) return;
+      setAddHomeError(null);
+      setIsAddingHome(true);
+      try {
+        const newHome = await addHome(name);
+        setNewHomeName('');
+        onSelectHome(newHome.id);
+      } catch (err) {
+        setAddHomeError(err instanceof Error ? err.message : 'Failed to add home');
+      } finally {
+        setIsAddingHome(false);
+      }
+    };
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Greeting */}
+        <div>
+          <h1
+            style={{
+              fontSize: '1.3rem',
+              fontWeight: 700,
+              color: 'var(--text-primary)',
+              margin: 0,
+            }}
+          >
+            {getGreeting()}, {firstName}
+          </h1>
+          <p
+            style={{
+              fontSize: '0.8rem',
+              color: 'var(--text-secondary)',
+              margin: '4px 0 0 0',
+            }}
+          >
+            Let's get you started!
+          </p>
+        </div>
+
+        {/* Add Home Card */}
+        <div
+          style={{
+            background: 'var(--bg-card)',
+            borderRadius: '16px',
+            border: '2px solid var(--accent-green)',
+            padding: '28px 20px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '16px',
+            marginTop: '20px',
+          }}
+        >
+          {/* Icon */}
+          <div
+            style={{
+              width: '72px',
+              height: '72px',
+              borderRadius: '50%',
+              background: 'rgba(34, 197, 94, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '2rem',
+            }}
+          >
+            🏠
+          </div>
+
+          {/* Title */}
+          <h2
+            style={{
+              fontSize: '1.1rem',
+              fontWeight: 700,
+              color: 'var(--text-primary)',
+              margin: 0,
+              textAlign: 'center',
+            }}
+          >
+            Add Your First Home
+          </h2>
+
+          {/* Description */}
+          <p
+            style={{
+              fontSize: '0.85rem',
+              color: 'var(--text-secondary)',
+              margin: 0,
+              textAlign: 'center',
+              lineHeight: 1.5,
+            }}
+          >
+            Create a home to start tracking your stock — kitchen, bedroom, office, or anywhere you store things.
+          </p>
+
+          {/* Input + Button */}
+          <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '4px' }}>
+            <input
+              type="text"
+              value={newHomeName}
+              onChange={(e) => setNewHomeName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddHome()}
+              placeholder="e.g., Kitchen, My Home"
+              style={{
+                flex: 1,
+                padding: '12px 14px',
+                borderRadius: '10px',
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-input)',
+                color: 'var(--text-primary)',
+                fontSize: '0.9rem',
+                fontFamily: 'inherit',
+                outline: 'none',
+              }}
+            />
+            <button
+              onClick={handleAddHome}
+              disabled={isAddingHome || !newHomeName.trim()}
+              style={{
+                padding: '12px 18px',
+                borderRadius: '10px',
+                border: 'none',
+                background: newHomeName.trim() ? 'var(--accent-green)' : 'var(--bg-input)',
+                color: newHomeName.trim() ? '#fff' : 'var(--text-secondary)',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                cursor: newHomeName.trim() ? 'pointer' : 'default',
+                fontFamily: 'inherit',
+                opacity: isAddingHome ? 0.6 : 1,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {isAddingHome ? '...' : '+ Add'}
+            </button>
+          </div>
+
+          {/* Error */}
+          {addHomeError && (
+            <p style={{ color: 'var(--accent-red)', fontSize: '0.8rem', margin: 0 }}>
+              {addHomeError}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {/* Greeting */}
@@ -142,6 +296,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ selectedHomeId, onSel
       <OverviewChart products={products} />
 
       {/* Expiring Soon */}
+      <div data-tour-id="tour-product-list">
       <ExpiringSoon
         products={products}
         onEdit={(product) => setEditingProduct(product)}
@@ -168,9 +323,11 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ selectedHomeId, onSel
           } catch { /* handled silently */ }
         }}
       />
+      </div>
 
       {/* Full-width Add Item Button */}
       <button
+        data-tour-id="tour-add-item"
         onClick={() => setIsAddSheetOpen(true)}
         style={{
           width: '100%',

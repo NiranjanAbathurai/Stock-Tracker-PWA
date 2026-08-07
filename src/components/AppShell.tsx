@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Tab } from '../types';
 import { useHomes } from '../hooks/useHomes';
 import { usePushNotification } from '../hooks/usePushNotification';
+import { useOnboarding } from '../hooks/useOnboarding';
 import { DEFAULT_CATEGORIES } from '../config/categories';
 import Header from './Header';
 import SideDrawer from './SideDrawer';
 import BottomNav from './BottomNav';
 import { VoiceAssistantFAB } from './VoiceAssistantFAB';
+import OnboardingTutorial from './OnboardingTutorial';
+import SpotlightTour from './SpotlightTour';
 import DashboardScreen from './screens/DashboardScreen';
 import InventoryScreen from './screens/InventoryScreen';
 import ProfileScreen from './screens/ProfileScreen';
@@ -23,6 +26,7 @@ const AppShell: React.FC<AppShellProps> = ({ onLogout }) => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const { homes, addProduct, deleteProduct, updateProduct } = useHomes();
   const { isSupported: pushSupported, isSubscribed, toggle: toggleNotifications } = usePushNotification();
+  const { shouldShowOnboarding, completeOnboarding, shouldShowSpotlight, completeSpotlight } = useOnboarding();
 
   // Auto-select first home when homes load
   useEffect(() => {
@@ -55,6 +59,14 @@ const AppShell: React.FC<AppShellProps> = ({ onLogout }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Onboarding Tutorial (one-time for new users) */}
+      {shouldShowOnboarding && <OnboardingTutorial onComplete={completeOnboarding} />}
+
+      {/* Spotlight Tour (highlights real UI elements after first home is added) */}
+      {!shouldShowOnboarding && shouldShowSpotlight && homes.length > 0 && (
+        <SpotlightTour onComplete={completeSpotlight} />
+      )}
+
       {/* Toast notification */}
       {toastMessage && (
         <div

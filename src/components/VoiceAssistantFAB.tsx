@@ -416,6 +416,7 @@ export const VoiceAssistantFAB = ({
 
       {/* The FAB button — draggable — opens chat on click */}
       <button
+        data-tour-id="tour-voice-fab"
         type="button"
         onClick={() => {
           // Only trigger if not dragged

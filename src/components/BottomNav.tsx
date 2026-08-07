@@ -64,6 +64,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) => {
           <button
             key={tab.key}
             onClick={() => onTabChange(tab.key)}
+            data-tour-id={tab.key === 'profile' ? 'tour-nav-profile' : undefined}
             style={{
               display: 'flex',
               flexDirection: 'column',
