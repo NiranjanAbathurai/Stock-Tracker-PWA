@@ -148,7 +148,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ selectedHomeId, onSel
         onStatusChange={async (productId, status) => {
           if (!selectedHomeId) return;
           try {
-            if (status === 'out_of_stock') {
+            if (status === 'available') {
+              // Open edit popup so user can add quantity/expiry — only saves on confirm
+              const product = products.find(p => p.id === productId);
+              if (product) {
+                setEditingProduct({ ...product, availability: 'Yes', availability_status: 'available' });
+              }
+            } else if (status === 'out_of_stock') {
               await updateProduct(selectedHomeId, productId, { availability: 'No', availability_status: status, expiryDate: '' });
             } else {
               await updateProduct(selectedHomeId, productId, { availability: 'Yes', availability_status: status });
