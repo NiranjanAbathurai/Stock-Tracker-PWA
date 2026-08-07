@@ -1,10 +1,20 @@
 [build]
-  command = "cd netlify/functions && npm install && cd ../.. && node scripts/bump-version.js && npm run build"
+  command = "cd netlify/functions && npm install && cd ../.. && node scripts/bump-version.js && node scripts/generate-icons.js && npm run build"
   publish = "dist"
   functions = "netlify/functions"
 
 [functions]
   node_bundler = "esbuild"
+
+# ─── Security Headers (all pages) ───
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(self), geolocation=()"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://mskobghlcvvvlljfkbpr.supabase.co https://generativelanguage.googleapis.com https://api.groq.com; font-src 'self'; frame-ancestors 'none'"
 
 [[headers]]
   for = "/sw.js"

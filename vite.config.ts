@@ -22,15 +22,17 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.png', 'icons/*.png', 'icons/*.svg', 'sw-push.js'],
+      includeAssets: ['favicon.png', 'icons/*.png', 'icons/*.svg', 'sw-push.js', 'offline.html'],
       manifest: {
         name: 'Stock Tracker',
         short_name: 'StockTracker',
-        description: 'Track your home stock inventory with expiry notifications',
+        description: 'Track your home stock inventory with expiry notifications and AI-powered voice commands',
         start_url: '/',
         display: 'standalone',
+        orientation: 'portrait',
         theme_color: '#1db954',
         background_color: '#000000',
+        categories: ['lifestyle', 'utilities', 'food'],
         icons: [
           {
             src: '/icons/icon-192x192.png',
@@ -59,14 +61,31 @@ export default defineConfig({
             type: 'image/svg+xml',
           },
         ],
+        shortcuts: [
+          {
+            name: 'Add Item',
+            short_name: 'Add',
+            url: '/?action=add',
+            icons: [{ src: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' }],
+          },
+          {
+            name: 'Voice Command',
+            short_name: 'Voice',
+            url: '/?action=voice',
+            icons: [{ src: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' }],
+          },
+        ],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         // Import the custom push handler into the generated service worker
         importScripts: ['/sw-push.js'],
-                // Force new service worker to activate immediately (no close/reopen needed)
+        // Force new service worker to activate immediately (no close/reopen needed)
         skipWaiting: true,
         clientsClaim: true,
+        // Offline fallback for navigation requests
+        navigateFallback: '/offline.html',
+        navigateFallbackDenylist: [/^\/.netlify/, /^\/api/],
         runtimeCaching: [
           {
             // SECURITY: Auth endpoints should never be cached

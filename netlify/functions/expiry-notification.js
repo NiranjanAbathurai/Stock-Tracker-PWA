@@ -10,6 +10,9 @@ const { createClient } = require('@supabase/supabase-js');
 const emailjs = require('@emailjs/nodejs');
 const webpush = require('web-push');
 const { SUPABASE_URL, SUPABASE_SERVICE_SECRET_KEY } = require('./supabase-config');
+// Shared status derivation — invariant with src/utils/deriveStatus.ts
+// eslint-disable-next-line no-unused-vars
+const { deriveStatusFromAvailability } = require('./derive-status');
 
 // EmailJS config — loaded from environment variables (never hardcode secrets!)
 const EMAILJS_SERVICE_ID = process.env.EMAILJS_SERVICE_ID;

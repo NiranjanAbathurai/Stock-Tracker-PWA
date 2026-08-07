@@ -13,6 +13,7 @@ try { require('dotenv').config(); } catch (e) {}
 
 const { createClient } = require('@supabase/supabase-js');
 const webpush = require('web-push');
+const { deriveStatusFromAvailability } = require('./derive-status');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_SECRET_KEY = process.env.SUPABASE_SERVICE_SECRET_KEY;
@@ -114,7 +115,7 @@ exports.handler = async (event, context) => {
           }
 
           // Use availability_status (persisted) with fallback to availability (legacy)
-          const status = p.availability_status || (p.availability === 'No' ? 'out_of_stock' : 'available');
+            const status = p.availability_status || deriveStatusFromAvailability(p.availability || 'Yes');
           if (status === 'out_of_stock') {
             outOfStock.push(p);
           } else if (status === 'low') {

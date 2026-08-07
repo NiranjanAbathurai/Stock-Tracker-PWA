@@ -5,9 +5,13 @@
  * Requires: npm install -D sharp
  */
 
-const sharp = require('sharp');
-const path = require('path');
-const fs = require('fs');
+import sharp from 'sharp';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const ICONS_DIR = path.join(__dirname, '..', 'public', 'icons');
 

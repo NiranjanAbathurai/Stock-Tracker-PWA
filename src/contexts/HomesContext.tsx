@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useCallback, useContext } from 'react';
+import React, { createContext, useState, useEffect, useCallback, useContext, useMemo } from 'react';
 import * as api from '../services/homeApi';
 import type { AvailabilityStatus, HomeItem, Product } from '../types';
 
@@ -18,6 +18,9 @@ interface HomesContextValue {
 }
 
 const HomesContext = createContext<HomesContextValue | null>(null);
+
+// Temporary ID counter for optimistic inserts (negative to avoid collision with DB IDs)
+let tempIdCounter = -1;
 
 export function HomesProvider({ children }: { children: React.ReactNode }) {
   const [homes, setHomes] = useState<HomeItem[]>([]);
@@ -89,14 +92,27 @@ export function HomesProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const deleteHome = useCallback(async (id: number) => {
-    await api.removeHome(id);
+    // Optimistic: remove immediately
     setHomes((prev) => prev.filter((home) => home.id !== id));
-  }, []);
+    try {
+      await api.removeHome(id);
+    } catch (err) {
+      // Rollback: reload full state on failure
+      loadHomes();
+      throw err;
+    }
+  }, [loadHomes]);
 
   const updateHomeName = useCallback(async (id: number, name: string) => {
-    await api.updateHomeName(id, name);
+    // Optimistic: update name immediately
     setHomes((prev) => prev.map((home) => (home.id === id ? { ...home, name } : home)));
-  }, []);
+    try {
+      await api.updateHomeName(id, name);
+    } catch (err) {
+      loadHomes();
+      throw err;
+    }
+  }, [loadHomes]);
 
   const toggleHome = useCallback((id: number) => {
     setHomes((prev) => prev.map((home) => (home.id === id ? { ...home, expanded: !home.expanded } : home)));
@@ -117,37 +133,86 @@ export function HomesProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    const newProductData = {
+    // Optimistic: add with temporary ID immediately
+    const tempId = tempIdCounter--;
+    const optimisticProduct: Product = {
+      id: tempId,
       stockType: initialData?.stockType || '',
       product: initialData?.product || '',
       quantity: initialData?.quantity || '',
       expiryDate: initialData?.expiryDate || '',
       availability: (initialData?.availability || 'Yes') as Product['availability'],
     };
-    const newProductFromApi = await api.addProduct(homeId, newProductData);
-    const newProduct: Product = {
-      id: newProductFromApi.id,
-      stockType: newProductFromApi.stock_type || '',
-      product: newProductFromApi.product || '',
-      quantity: newProductFromApi.quantity || '',
-      expiryDate: newProductFromApi.expiry_date || '',
-      availability: newProductFromApi.availability || 'Yes',
-    };
+
     setHomes((prev) => prev.map((h) =>
-      h.id === homeId ? { ...h, products: [...h.products, newProduct] } : h
+      h.id === homeId ? { ...h, products: [...h.products, optimisticProduct] } : h
     ));
-    return newProduct;
+
+    try {
+      const newProductData = {
+        stockType: initialData?.stockType || '',
+        product: initialData?.product || '',
+        quantity: initialData?.quantity || '',
+        expiryDate: initialData?.expiryDate || '',
+        availability: (initialData?.availability || 'Yes') as Product['availability'],
+      };
+      const newProductFromApi = await api.addProduct(homeId, newProductData);
+      const realProduct: Product = {
+        id: newProductFromApi.id,
+        stockType: newProductFromApi.stock_type || '',
+        product: newProductFromApi.product || '',
+        quantity: newProductFromApi.quantity || '',
+        expiryDate: newProductFromApi.expiry_date || '',
+        availability: newProductFromApi.availability || 'Yes',
+      };
+
+      // Replace temp ID with real ID from server
+      setHomes((prev) => prev.map((h) =>
+        h.id === homeId
+          ? { ...h, products: h.products.map((p) => p.id === tempId ? realProduct : p) }
+          : h
+      ));
+      return realProduct;
+    } catch (err) {
+      // Rollback: remove the optimistic product
+      setHomes((prev) => prev.map((h) =>
+        h.id === homeId
+          ? { ...h, products: h.products.filter((p) => p.id !== tempId) }
+          : h
+      ));
+      throw err;
+    }
   }, [homes]);
 
   const deleteProduct = useCallback(async (homeId: number, productId: number) => {
-    await api.removeProduct(productId);
+    // Optimistic: remove immediately
+    let removedProduct: Product | undefined;
     setHomes((prev) =>
-      prev.map((home) =>
-        home.id === homeId
-          ? { ...home, products: home.products.filter((p) => p.id !== productId) }
-          : home
-      )
+      prev.map((home) => {
+        if (home.id === homeId) {
+          removedProduct = home.products.find((p) => p.id === productId);
+          return { ...home, products: home.products.filter((p) => p.id !== productId) };
+        }
+        return home;
+      })
     );
+
+    try {
+      await api.removeProduct(productId);
+    } catch (err) {
+      // Rollback: re-add the product
+      if (removedProduct) {
+        const productToRestore = removedProduct;
+        setHomes((prev) =>
+          prev.map((home) =>
+            home.id === homeId
+              ? { ...home, products: [...home.products, productToRestore] }
+              : home
+          )
+        );
+      }
+      throw err;
+    }
   }, []);
 
   const updateProduct = useCallback(async (homeId: number, productId: number, fields: Partial<Product>) => {
@@ -190,7 +255,8 @@ export function HomesProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  const value: HomesContextValue = {
+  // Memoize context value to prevent unnecessary re-renders of consumers
+  const value: HomesContextValue = useMemo(() => ({
     homes,
     isLoading,
     error,
@@ -203,7 +269,7 @@ export function HomesProvider({ children }: { children: React.ReactNode }) {
     updateProduct,
     updateHomeFilters,
     reload: loadHomes,
-  };
+  }), [homes, isLoading, error, addHome, deleteHome, updateHomeName, toggleHome, addProduct, deleteProduct, updateProduct, updateHomeFilters, loadHomes]);
 
   return (
     <HomesContext.Provider value={value}>
