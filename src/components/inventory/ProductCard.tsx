@@ -45,6 +45,7 @@ function getCategoryEmoji(category: string): string {
 
 const ProductCard: React.FC<ProductCardProps> = ({ product, onEdit, onDelete, onStatusChange }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuActionFiredRef = React.useRef(false);
   const status = getAvailabilityStatus(product);
   const statusColor = getStatusColor(status);
   const statusLabel = getStatusLabel(status);
@@ -56,6 +57,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onEdit, onDelete, on
         // Don't trigger if clicking the menu button or menu itself
         const target = e.target as HTMLElement;
         if (target.closest('[data-menu-trigger]') || target.closest('[data-menu-dropdown]')) return;
+        // Don't trigger if a menu action was just fired (prevents edit popup after status change)
+        if (menuActionFiredRef.current) {
+          menuActionFiredRef.current = false;
+          return;
+        }
+        if (menuOpen) return;
         onEdit(product);
       }}
       style={{
@@ -149,14 +156,16 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onEdit, onDelete, on
       </button>
 
       {/* ThreeDotMenu dropdown */}
-      <ThreeDotMenu
-        isOpen={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        onEdit={() => onEdit(product)}
-        onDelete={() => onDelete(product.id)}
-        onStatusChange={(newStatus) => onStatusChange(product.id, newStatus)}
-        currentStatus={status}
-      />
+      <div data-menu-dropdown="true">
+        <ThreeDotMenu
+          isOpen={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          onEdit={() => onEdit(product)}
+          onDelete={() => { menuActionFiredRef.current = true; onDelete(product.id); }}
+          onStatusChange={(newStatus) => { menuActionFiredRef.current = true; onStatusChange(product.id, newStatus); }}
+          currentStatus={status}
+        />
+      </div>
     </div>
   );
 };

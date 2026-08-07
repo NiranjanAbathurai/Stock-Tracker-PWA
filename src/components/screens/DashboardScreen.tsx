@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../config/supabase';
 import { useHomes } from '../../hooks/useHomes';
+import type { Product } from '../../types';
 import HomeSelector from '../dashboard/HomeSelector';
 import OverviewChart from '../dashboard/OverviewChart';
 import ExpiringSoon from '../dashboard/ExpiringSoon';
 import AddItemSheet from '../dashboard/AddItemSheet';
+import EditProductModal from '../inventory/EditProductModal';
 
 interface DashboardScreenProps {
   selectedHomeId: number | null;
@@ -12,8 +14,9 @@ interface DashboardScreenProps {
 }
 
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ selectedHomeId, onSelectHome }) => {
-  const { homes, isLoading, error, reload } = useHomes();
+  const { homes, isLoading, error, reload, updateProduct, deleteProduct } = useHomes();
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [userName, setUserName] = useState<string>('');
 
   // Fetch user name from Supabase
@@ -139,7 +142,26 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ selectedHomeId, onSel
       <OverviewChart products={products} />
 
       {/* Expiring Soon */}
-      <ExpiringSoon products={products} />
+      <ExpiringSoon
+        products={products}
+        onEdit={(product) => setEditingProduct(product)}
+        onStatusChange={async (productId, status) => {
+          if (!selectedHomeId) return;
+          try {
+            if (status === 'out_of_stock') {
+              await updateProduct(selectedHomeId, productId, { availability: 'No', availability_status: status, expiryDate: '' });
+            } else {
+              await updateProduct(selectedHomeId, productId, { availability: 'Yes', availability_status: status });
+            }
+          } catch { /* handled silently */ }
+        }}
+        onDelete={async (productId) => {
+          if (!selectedHomeId) return;
+          try {
+            await deleteProduct(selectedHomeId, productId);
+          } catch { /* handled silently */ }
+        }}
+      />
 
       {/* Full-width Add Item Button */}
       <button
@@ -174,6 +196,20 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ selectedHomeId, onSel
           onClose={() => setIsAddSheetOpen(false)}
           homeId={selectedHomeId}
           onItemAdded={reload}
+        />
+      )}
+
+      {/* Edit Product Modal */}
+      {editingProduct && selectedHomeId && (
+        <EditProductModal
+          isOpen={true}
+          onClose={() => setEditingProduct(null)}
+          product={editingProduct}
+          homeId={selectedHomeId}
+          onProductUpdated={() => {
+            setEditingProduct(null);
+            reload();
+          }}
         />
       )}
     </div>

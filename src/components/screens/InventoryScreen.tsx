@@ -63,22 +63,14 @@ const InventoryScreen: React.FC<InventoryScreenProps> = ({ selectedHomeId }) => 
   const handleStatusChange = async (productId: number, status: AvailabilityStatus) => {
     if (!selectedHomeId) return;
 
-    try {
-      if (status === 'available') {
-        // When marking as available, open edit popup so user can add quantity
-        const product = products.find(p => p.id === productId);
-        if (product) {
-          const availability: Product['availability'] = 'Yes';
-          await updateProduct(selectedHomeId, productId, { availability, availability_status: status });
-          setEditingProduct({ ...product, availability: 'Yes', availability_status: 'available' });
-        }
-      } else {
-        const availability: Product['availability'] = status === 'out_of_stock' ? 'No' : 'Yes';
-        const updates: Partial<Product> = { availability, availability_status: status };
-        if (status === 'out_of_stock') {
-          updates.expiryDate = '';
-        }
+    try { 
+      if (status === 'out_of_stock') {
+        // Mark as out of stock — reset expiry date, no popup
+        const updates: Partial<Product> = { availability: 'No', availability_status: status, expiryDate: '' };
         await updateProduct(selectedHomeId, productId, updates);
+      } else {
+        // Mark as available or low stock — just update status directly, no popup
+        await updateProduct(selectedHomeId, productId, { availability: 'Yes', availability_status: status });
       }
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to update product.');

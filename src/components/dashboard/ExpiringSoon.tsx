@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
-import type { Product } from '../../types';
+import React, { useState, useEffect, useRef } from 'react';
+import type { Product, AvailabilityStatus } from '../../types';
 
 interface ExpiringSoonProps {
   products: Product[];
+  onEdit?: (product: Product) => void;
+  onStatusChange?: (productId: number, status: AvailabilityStatus) => void;
+  onDelete?: (productId: number) => void;
 }
 
-const ExpiringSoon: React.FC<ExpiringSoonProps> = ({ products }) => {
+const ExpiringSoon: React.FC<ExpiringSoonProps> = ({ products, onEdit, onStatusChange, onDelete }) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -78,7 +81,13 @@ const ExpiringSoon: React.FC<ExpiringSoonProps> = ({ products }) => {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {expiryItems.map((item) => (
-              <ExpiryItem key={item.id} item={item} />
+              <ExpiryItem
+                key={item.id}
+                item={item}
+                onEdit={onEdit}
+                onStatusChange={onStatusChange}
+                onDelete={onDelete}
+              />
             ))}
           </div>
         )}
@@ -98,7 +107,13 @@ const ExpiringSoon: React.FC<ExpiringSoonProps> = ({ products }) => {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {outOfStock.map((item) => (
-              <OutOfStockItem key={item.id} item={item} />
+              <OutOfStockItem
+                key={item.id}
+                item={item}
+                onEdit={onEdit}
+                onStatusChange={onStatusChange}
+                onDelete={onDelete}
+              />
             ))}
           </div>
         )}
@@ -182,12 +197,115 @@ const AccordionSection: React.FC<AccordionSectionProps> = ({
   );
 };
 
+// ─── Inline Three-Dot Menu for Dashboard Items ───
+interface ItemMenuProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onStatusChange: (status: AvailabilityStatus) => void;
+  currentStatus: AvailabilityStatus;
+}
+
+const ItemMenu: React.FC<ItemMenuProps> = ({ isOpen, onClose, onEdit, onDelete, onStatusChange, currentStatus }) => {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const menuItems: { label: string; onClick: () => void; color?: string; hidden?: boolean }[] = [
+    { label: '✏️ Edit', onClick: onEdit },
+    {
+      label: '✅ Mark Available',
+      onClick: () => onStatusChange('available'),
+      hidden: currentStatus === 'available',
+    },
+    {
+      label: '⚠️ Mark Low Stock',
+      onClick: () => onStatusChange('low'),
+      hidden: currentStatus === 'low',
+    },
+    {
+      label: '❌ Mark Out of Stock',
+      onClick: () => onStatusChange('out_of_stock'),
+      hidden: currentStatus === 'out_of_stock',
+    },
+    { label: '🗑️ Delete', onClick: onDelete, color: 'var(--accent-red)' },
+  ];
+
+  return (
+    <div
+      ref={menuRef}
+      style={{
+        position: 'absolute',
+        top: '100%',
+        right: '0',
+        marginTop: '4px',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '10px',
+        padding: '4px 0',
+        minWidth: '170px',
+        zIndex: 11000,
+        boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+      }}
+    >
+      {menuItems
+        .filter((item) => !item.hidden)
+        .map((item, idx) => (
+          <button
+            key={idx}
+            onClick={(e) => {
+              e.stopPropagation();
+              item.onClick();
+              onClose();
+            }}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '10px 14px',
+              background: 'transparent',
+              border: 'none',
+              color: item.color || 'var(--text-primary)',
+              fontSize: '0.8rem',
+              textAlign: 'left',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+    </div>
+  );
+};
+
 // ─── Expiry Item Row ───
 interface ExpiryItemProps {
   item: Product & { daysLeft: number };
+  onEdit?: (product: Product) => void;
+  onStatusChange?: (productId: number, status: AvailabilityStatus) => void;
+  onDelete?: (productId: number) => void;
 }
 
-const ExpiryItem: React.FC<ExpiryItemProps> = ({ item }) => {
+const ExpiryItem: React.FC<ExpiryItemProps> = ({ item, onEdit, onStatusChange, onDelete }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   const getIndicatorColor = (days: number) => {
     if (days < 0) return 'var(--accent-red)';
     if (days <= 1) return 'var(--accent-red)';
@@ -205,15 +323,20 @@ const ExpiryItem: React.FC<ExpiryItemProps> = ({ item }) => {
     return `${days} days left`;
   };
 
+  const currentStatus: AvailabilityStatus = item.availability_status || (item.availability === 'Yes' ? 'available' : 'out_of_stock');
+
   return (
     <div
+      onClick={() => onEdit?.(item)}
       style={{
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
         gap: '10px',
         padding: '10px 12px',
         borderRadius: '10px',
         background: 'var(--bg-input)',
+        cursor: onEdit ? 'pointer' : 'default',
       }}
     >
       {/* Color indicator */}
@@ -260,6 +383,42 @@ const ExpiryItem: React.FC<ExpiryItemProps> = ({ item }) => {
       >
         {getDaysLabel(item.daysLeft)}
       </div>
+
+      {/* Three-dot menu button */}
+      {(onStatusChange || onDelete) && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuOpen(true);
+          }}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            padding: '4px',
+            fontSize: '1.1rem',
+            lineHeight: 1,
+            fontFamily: 'inherit',
+            flexShrink: 0,
+          }}
+          aria-label="Options"
+        >
+          ⋮
+        </button>
+      )}
+
+      {/* Menu dropdown */}
+      {menuOpen && (
+        <ItemMenu
+          isOpen={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          onEdit={() => onEdit?.(item)}
+          onDelete={() => onDelete?.(item.id)}
+          onStatusChange={(status) => onStatusChange?.(item.id, status)}
+          currentStatus={currentStatus}
+        />
+      )}
     </div>
   );
 };
@@ -267,18 +426,28 @@ const ExpiryItem: React.FC<ExpiryItemProps> = ({ item }) => {
 // ─── Out of Stock Item Row ───
 interface OutOfStockItemProps {
   item: Product;
+  onEdit?: (product: Product) => void;
+  onStatusChange?: (productId: number, status: AvailabilityStatus) => void;
+  onDelete?: (productId: number) => void;
 }
 
-const OutOfStockItem: React.FC<OutOfStockItemProps> = ({ item }) => {
+const OutOfStockItem: React.FC<OutOfStockItemProps> = ({ item, onEdit, onStatusChange, onDelete }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const currentStatus: AvailabilityStatus = item.availability_status || 'out_of_stock';
+
   return (
     <div
+      onClick={() => onEdit?.(item)}
       style={{
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
         gap: '10px',
         padding: '10px 12px',
         borderRadius: '10px',
         background: 'var(--bg-input)',
+        cursor: onEdit ? 'pointer' : 'default',
       }}
     >
       {/* Red dot indicator */}
@@ -316,7 +485,7 @@ const OutOfStockItem: React.FC<OutOfStockItemProps> = ({ item }) => {
         style={{
           padding: '3px 8px',
           borderRadius: '10px',
-          background: 'var(--accent-orange)15',
+          background: 'rgba(249, 115, 22, 0.15)',
           color: 'var(--accent-orange)',
           fontSize: '0.7rem',
           fontWeight: 600,
@@ -325,6 +494,42 @@ const OutOfStockItem: React.FC<OutOfStockItemProps> = ({ item }) => {
       >
         Needs restock
       </div>
+
+      {/* Three-dot menu button */}
+      {(onStatusChange || onDelete) && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuOpen(true);
+          }}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            padding: '4px',
+            fontSize: '1.1rem',
+            lineHeight: 1,
+            fontFamily: 'inherit',
+            flexShrink: 0,
+          }}
+          aria-label="Options"
+        >
+          ⋮
+        </button>
+      )}
+
+      {/* Menu dropdown */}
+      {menuOpen && (
+        <ItemMenu
+          isOpen={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          onEdit={() => onEdit?.(item)}
+          onDelete={() => onDelete?.(item.id)}
+          onStatusChange={(status) => onStatusChange?.(item.id, status)}
+          currentStatus={currentStatus}
+        />
+      )}
     </div>
   );
 };
