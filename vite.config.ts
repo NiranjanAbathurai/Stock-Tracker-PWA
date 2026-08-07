@@ -13,7 +13,7 @@ export default defineConfig({
     proxy: {
       // Proxy /.netlify/functions to the deployed PWA's own Netlify functions
       '/.netlify/functions': {
-        target: 'https://stock-tracker-pwa-nj.netlify.app',
+        target: 'https://stock-tracker-app-ai.netlify.app',
         changeOrigin: true,
       },
     },

@@ -12,7 +12,7 @@ export const App = () => {
   const { authState, error, login, logout, clearError } = useAuth();
   const [formMode, setFormMode] = useState<'signin' | 'signup'>('signin');
 
-  // Check if user came from portfolio with ?install=true
+  // Check if user came from external link with ?install=true
   const [showInstall, setShowInstall] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('install') === 'true';
