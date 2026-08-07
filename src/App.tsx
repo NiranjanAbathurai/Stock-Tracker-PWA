@@ -5,6 +5,7 @@ import { SignInForm } from './components/SignInForm';
 import { SignUpForm } from './components/SignUpForm';
 import AppShell from './components/AppShell';
 import ErrorBoundary from './components/ui/ErrorBoundary';
+import { HomesProvider } from './contexts/HomesContext';
 import { InstallPage } from './components/InstallPage';
 
 export const App = () => {
@@ -38,8 +39,10 @@ export const App = () => {
   if (authState === 'authenticated') {
     return (
       <ErrorBoundary>
-        <AppShell onLogout={logout} />
-        <InstallFooter />
+        <HomesProvider>
+          <AppShell onLogout={logout} />
+          <InstallFooter />
+        </HomesProvider>
       </ErrorBoundary>
     );
   }

@@ -1,16 +1,6 @@
 import { supabase } from '../config/supabase';
 import type { AvailabilityStatus, Product } from '../types';
-
-/**
- * Derivation rule: availability_status → availability (Yes/No)
- * INVARIANT: This must be consistent everywhere (client, server, Netlify functions).
- *   - 'available' or 'low' → 'Yes' (item exists in stock)
- *   - 'out_of_stock' → 'No' (item is finished)
- */
-function deriveAvailability(status: AvailabilityStatus | undefined): 'Yes' | 'No' | '' {
-  if (!status) return '';
-  return status === 'out_of_stock' ? 'No' : 'Yes';
-}
+import { deriveAvailability, deriveStatusFromAvailability } from '../utils/deriveStatus';
 
 // Helper to get the current user
 async function getCurrentUser() {
@@ -97,14 +87,14 @@ export async function addProduct(homeId: number, productData: Omit<Product, 'id'
   }
 
   // Derive availability from availability_status for consistency
-  const status = productData.availability_status || (productData.availability === 'No' ? 'out_of_stock' : 'available');
+  const status: AvailabilityStatus = productData.availability_status || deriveStatusFromAvailability(productData.availability);
   const productToInsert = {
     home_id: homeId,
     stock_type: productData.stockType,
     product: productData.product,
     quantity: productData.quantity,
     expiry_date: productData.expiryDate || null,
-    availability: deriveAvailability(status as AvailabilityStatus) || productData.availability,
+    availability: deriveAvailability(status),
     availability_status: status,
   };
   const { data, error } = await supabase
@@ -116,8 +106,19 @@ export async function addProduct(homeId: number, productData: Omit<Product, 'id'
   return data;
 }
 
-// UPDATE a product
+// UPDATE a product (with ownership verification)
 export async function updateProduct(productId: number, fields: Partial<Product>) {
+  const user = await getCurrentUser();
+
+  // SECURITY: Verify ownership via home → user_id join
+  const { data: owned } = await supabase
+    .from('products')
+    .select('id, home_id, homes!inner(user_id)')
+    .eq('id', productId)
+    .eq('homes.user_id', user.id)
+    .maybeSingle();
+  if (!owned) throw new Error('Product not found or access denied.');
+
   const fieldsToUpdate: Record<string, unknown> = {};
   if (fields.stockType !== undefined) fieldsToUpdate.stock_type = fields.stockType;
   if (fields.product !== undefined) fieldsToUpdate.product = fields.product;
@@ -132,7 +133,7 @@ export async function updateProduct(productId: number, fields: Partial<Product>)
   } else if (fields.availability !== undefined) {
     fieldsToUpdate.availability = fields.availability;
     // Reverse-derive status from availability for backward compat
-    fieldsToUpdate.availability_status = fields.availability === 'No' ? 'out_of_stock' : 'available';
+    fieldsToUpdate.availability_status = deriveStatusFromAvailability(fields.availability);
   }
 
   const { data, error } = await supabase
@@ -156,8 +157,19 @@ export async function addCatalogItem(categoryId: number, itemName: string) {
   return data;
 }
 
-// REMOVE a product
+// REMOVE a product (with ownership verification)
 export async function removeProduct(productId: number) {
+  const user = await getCurrentUser();
+
+  // SECURITY: Verify ownership via home → user_id join
+  const { data: owned } = await supabase
+    .from('products')
+    .select('id, home_id, homes!inner(user_id)')
+    .eq('id', productId)
+    .eq('homes.user_id', user.id)
+    .maybeSingle();
+  if (!owned) throw new Error('Product not found or access denied.');
+
   const { error } = await supabase
     .from('products')
     .delete()

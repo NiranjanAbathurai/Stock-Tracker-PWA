@@ -19,7 +19,7 @@ export type Product = {
   product: string;
   quantity: string;
   expiryDate: string;
-  availability: 'Yes' | 'No' | '';
+  availability: 'Yes' | 'No';
   isExpired?: boolean;
   availability_status?: AvailabilityStatus;
 };

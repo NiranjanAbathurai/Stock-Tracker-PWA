@@ -3,6 +3,7 @@ import type { Product, AvailabilityStatus } from '../../types';
 import * as api from '../../services/homeApi';
 import { useHomes } from '../../hooks/useHomes';
 import { DEFAULT_CATEGORIES } from '../../config/categories';
+import { deriveAvailability } from '../../utils/deriveStatus';
 import ExpiryDatePicker from '../ui/ExpiryDatePicker';
 
 interface EditProductModalProps {
@@ -90,7 +91,7 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
     setSaving(true);
     setError(null);
     try {
-      const availability: Product['availability'] = availabilityStatus === 'available' ? 'Yes' : 'No';
+      const availability: Product['availability'] = deriveAvailability(availabilityStatus);
       await api.updateProduct(product.id, {
         product: name,
         stockType: category,

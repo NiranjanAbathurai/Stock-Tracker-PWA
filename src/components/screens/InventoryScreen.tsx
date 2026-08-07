@@ -19,6 +19,7 @@ const InventoryScreen: React.FC<InventoryScreenProps> = ({ selectedHomeId }) => 
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Get products for selected home
   const selectedHome = homes.find((h) => h.id === selectedHomeId);
@@ -54,27 +55,33 @@ const InventoryScreen: React.FC<InventoryScreenProps> = ({ selectedHomeId }) => 
     });
   }, [products, searchQuery, activeCategory, filterMode]);
 
-  const handleStatusChange = (productId: number, status: AvailabilityStatus) => {
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleStatusChange = async (productId: number, status: AvailabilityStatus) => {
     if (!selectedHomeId) return;
 
-    if (status === 'available') {
-      // When marking as available, open edit popup so user can add quantity
-      const product = products.find(p => p.id === productId);
-      if (product) {
-        // First update the status
-        const availability: Product['availability'] = 'Yes';
-        updateProduct(selectedHomeId, productId, { availability, availability_status: status });
-        // Then open edit modal for quantity
-        setEditingProduct({ ...product, availability: 'Yes', availability_status: 'available' });
+    try {
+      if (status === 'available') {
+        // When marking as available, open edit popup so user can add quantity
+        const product = products.find(p => p.id === productId);
+        if (product) {
+          const availability: Product['availability'] = 'Yes';
+          await updateProduct(selectedHomeId, productId, { availability, availability_status: status });
+          setEditingProduct({ ...product, availability: 'Yes', availability_status: 'available' });
+        }
+      } else {
+        const availability: Product['availability'] = status === 'out_of_stock' ? 'No' : 'Yes';
+        const updates: Partial<Product> = { availability, availability_status: status };
+        if (status === 'out_of_stock') {
+          updates.expiryDate = '';
+        }
+        await updateProduct(selectedHomeId, productId, updates);
       }
-    } else {
-      const availability: Product['availability'] = status === 'out_of_stock' ? 'No' : 'Yes';
-      // When marking as out of stock, clear the expiry date (it's no longer relevant)
-      const updates: Partial<Product> = { availability, availability_status: status };
-      if (status === 'out_of_stock') {
-        updates.expiryDate = '';
-      }
-      updateProduct(selectedHomeId, productId, updates);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update product.');
     }
   };
 
@@ -140,6 +147,30 @@ const InventoryScreen: React.FC<InventoryScreenProps> = ({ selectedHomeId }) => 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {/* Toast notification */}
+      {toastMessage && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '70px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--accent-red)',
+            borderRadius: '10px',
+            padding: '10px 20px',
+            fontSize: '0.85rem',
+            color: 'var(--accent-red)',
+            zIndex: 9999,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            maxWidth: '90%',
+            textAlign: 'center',
+          }}
+        >
+          {toastMessage}
+        </div>
+      )}
+
       {/* Search Bar */}
       <SearchBar value={searchQuery} onChange={setSearchQuery} />
 

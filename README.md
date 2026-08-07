@@ -9,7 +9,7 @@ A Progressive Web App for tracking home stock inventory with expiry notification
 - 🔐 **Persistent Login** — Auto-login on app open (no sign-in screen every time)
 - 📦 **Stock Management** — Track products across multiple homes
 - 🏷️ **Categorized Catalog** — Organized stock types and products
-- 📴 **Offline Support** — View cached data when offline
+- 📴 **Offline Caching** — Previously loaded data viewable offline via service worker cache (full offline mode planned)
 - ⏰ **Daily Expiry Check** — Automated cron job at midnight IST
 
 ## Tech Stack

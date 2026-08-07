@@ -22,7 +22,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.png', 'icons/*.png', 'sw-push.js'],
+      includeAssets: ['favicon.png', 'icons/*.png', 'icons/*.svg', 'sw-push.js'],
       manifest: {
         name: 'Stock Tracker',
         short_name: 'StockTracker',
@@ -33,20 +33,30 @@ export default defineConfig({
         background_color: '#000000',
         icons: [
           {
-            src: '/icons/icon-192x192.svg',
+            src: '/icons/icon-192x192.png',
             sizes: '192x192',
-            type: 'image/svg+xml',
+            type: 'image/png',
           },
           {
-            src: '/icons/icon-512x512.svg',
+            src: '/icons/icon-512x512.png',
             sizes: '512x512',
-            type: 'image/svg+xml',
+            type: 'image/png',
           },
           {
-            src: '/icons/icon-512x512.svg',
+            src: '/icons/icon-512x512.png',
             sizes: '512x512',
-            type: 'image/svg+xml',
+            type: 'image/png',
             purpose: 'maskable',
+          },
+          {
+            src: '/icons/icon-192x192.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+          },
+          {
+            src: '/icons/icon-512x512.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
           },
         ],
       },
