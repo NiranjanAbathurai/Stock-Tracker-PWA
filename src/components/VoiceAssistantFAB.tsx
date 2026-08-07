@@ -346,13 +346,14 @@ export const VoiceAssistantFAB = ({
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && textInput.trim() && state === 'idle') {
+                const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+                if (e.key === 'Enter' && !isMobile && !e.shiftKey && textInput.trim() && state === 'idle') {
                   e.preventDefault();
                   submitTextCommand(textInput.trim());
                   setTextInput('');
                 }
               }}
-              placeholder="Type command... (Shift+Enter for new line)"
+              placeholder={('ontouchstart' in window || navigator.maxTouchPoints > 0) ? "Type command... (tap ➤ to send)" : "Type command... (Shift+Enter for new line)"}
               disabled={state === 'processing' || state === 'recording'}
               rows={1}
               onInput={(e) => {

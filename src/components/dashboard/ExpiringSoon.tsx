@@ -69,6 +69,7 @@ const ExpiringSoon: React.FC<ExpiringSoonProps> = ({ products }) => {
         title={`⏰ Expiring & Expired (${expiryItems.length})`}
         titleColor={hasExpiryIssues ? 'var(--accent-red)' : 'var(--text-primary)'}
         defaultOpen={hasExpiryIssues}
+        storageKey="accordion-expiring"
       >
         {expiryItems.length === 0 ? (
           <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.82rem', padding: '8px 0' }}>
@@ -88,6 +89,7 @@ const ExpiringSoon: React.FC<ExpiringSoonProps> = ({ products }) => {
         title={`🛒 Out of Stock (${outOfStock.length})`}
         titleColor={hasOutOfStock ? 'var(--accent-orange)' : 'var(--text-primary)'}
         defaultOpen={!hasExpiryIssues && hasOutOfStock}
+        storageKey="accordion-out-of-stock"
       >
         {outOfStock.length === 0 ? (
           <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.82rem', padding: '8px 0' }}>
@@ -110,6 +112,7 @@ interface AccordionSectionProps {
   title: string;
   titleColor: string;
   defaultOpen: boolean;
+  storageKey: string;
   children: React.ReactNode;
 }
 
@@ -117,9 +120,20 @@ const AccordionSection: React.FC<AccordionSectionProps> = ({
   title,
   titleColor,
   defaultOpen,
+  storageKey,
   children,
 }) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [isOpen, setIsOpen] = useState(() => {
+    const saved = sessionStorage.getItem(storageKey);
+    if (saved !== null) return saved === 'true';
+    return defaultOpen;
+  });
+
+  const handleToggle = () => {
+    const newState = !isOpen;
+    setIsOpen(newState);
+    sessionStorage.setItem(storageKey, String(newState));
+  };
 
   return (
     <div
@@ -132,7 +146,7 @@ const AccordionSection: React.FC<AccordionSectionProps> = ({
     >
       {/* Accordion Header */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleToggle}
         style={{
           width: '100%',
           display: 'flex',

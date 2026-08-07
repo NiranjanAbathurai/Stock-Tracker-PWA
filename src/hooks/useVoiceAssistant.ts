@@ -74,11 +74,12 @@ export function useVoiceAssistant({
         // Use Browser Speech API (free! → text → Groq)
         useBrowserSpeechRef.current = true;
         setState('recording');
-        // Speech recognition starts in stopRecording (it's a single call)
-        // Actually, we start it immediately and it auto-stops
-        setState('processing');
 
+        // Listen via Browser Speech API (stays in 'recording' state while listening)
         const transcript = await browserSpeechToText('en-IN');
+
+        // Now switch to processing (sending transcript to AI)
+        setState('processing');
 
         if (!transcript.trim()) {
           setState('idle');

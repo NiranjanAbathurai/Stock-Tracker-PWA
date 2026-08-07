@@ -169,7 +169,7 @@ const ExpiryDatePicker: React.FC<ExpiryDatePickerProps> = ({ value, onChange, la
               background: 'var(--bg-card)',
               borderRadius: '16px 16px 0 0',
               padding: '20px',
-              paddingBottom: '32px',
+              paddingBottom: '80px',
               zIndex: 1101,
               maxHeight: '60vh',
               overflowY: 'auto',
