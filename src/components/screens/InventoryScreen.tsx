@@ -5,6 +5,7 @@ import SearchBar from '../inventory/SearchBar';
 import CategoryTabs from '../inventory/CategoryTabs';
 import ProductCard from '../inventory/ProductCard';
 import EditProductModal from '../inventory/EditProductModal';
+import SwipeableRow from '../ui/SwipeableRow';
 
 interface InventoryScreenProps {
   selectedHomeId: number | null;
@@ -243,13 +244,18 @@ const InventoryScreen: React.FC<InventoryScreenProps> = ({ selectedHomeId }) => 
           gap: '10px',
         }}>
           {filteredProducts.map((product) => (
-            <ProductCard
+            <SwipeableRow
               key={product.id}
-              product={product}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onStatusChange={handleStatusChange}
-            />
+              currentStatus={product.availability_status || (product.availability === 'Yes' ? 'available' : 'out_of_stock')}
+              onStatusChange={(status) => handleStatusChange(product.id, status)}
+            >
+              <ProductCard
+                product={product}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onStatusChange={handleStatusChange}
+              />
+            </SwipeableRow>
           ))}
         </div>
       )}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Product, AvailabilityStatus } from '../../types';
+import SwipeableRow from '../ui/SwipeableRow';
 
 interface ExpiringSoonProps {
   products: Product[];
@@ -81,13 +82,19 @@ const ExpiringSoon: React.FC<ExpiringSoonProps> = ({ products, onEdit, onStatusC
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {expiryItems.map((item) => (
-              <ExpiryItem
+              <SwipeableRow
                 key={item.id}
-                item={item}
-                onEdit={onEdit}
-                onStatusChange={onStatusChange}
-                onDelete={onDelete}
-              />
+                currentStatus={item.availability_status || (item.availability === 'Yes' ? 'available' : 'out_of_stock')}
+                onStatusChange={(status) => onStatusChange?.(item.id, status)}
+                disabled={!onStatusChange}
+              >
+                <ExpiryItem
+                  item={item}
+                  onEdit={onEdit}
+                  onStatusChange={onStatusChange}
+                  onDelete={onDelete}
+                />
+              </SwipeableRow>
             ))}
           </div>
         )}
@@ -107,13 +114,19 @@ const ExpiringSoon: React.FC<ExpiringSoonProps> = ({ products, onEdit, onStatusC
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {outOfStock.map((item) => (
-              <OutOfStockItem
+              <SwipeableRow
                 key={item.id}
-                item={item}
-                onEdit={onEdit}
-                onStatusChange={onStatusChange}
-                onDelete={onDelete}
-              />
+                currentStatus={item.availability_status || 'out_of_stock'}
+                onStatusChange={(status) => onStatusChange?.(item.id, status)}
+                disabled={!onStatusChange}
+              >
+                <OutOfStockItem
+                  item={item}
+                  onEdit={onEdit}
+                  onStatusChange={onStatusChange}
+                  onDelete={onDelete}
+                />
+              </SwipeableRow>
             ))}
           </div>
         )}
