@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Product, AvailabilityStatus } from '../../types';
-import ThreeDotMenu from './ThreeDotMenu';
+import ThreeDotMenu from '../ui/ThreeDotMenu';
 
 interface ProductCardProps {
   product: Product;
@@ -46,6 +46,7 @@ function getCategoryEmoji(category: string): string {
 const ProductCard: React.FC<ProductCardProps> = ({ product, onEdit, onDelete, onStatusChange }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuActionFiredRef = React.useRef(false);
+  const [triggerEl, setTriggerEl] = useState<HTMLButtonElement | null>(null);
   const status = getAvailabilityStatus(product);
   const statusColor = getStatusColor(status);
   const statusLabel = getStatusLabel(status);
@@ -134,10 +135,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onEdit, onDelete, on
 
       {/* Three-dot menu button */}
       <button
+        ref={setTriggerEl}
         data-menu-trigger="true"
         onClick={(e) => {
           e.stopPropagation();
-          setMenuOpen(true);
+          setMenuOpen((open) => !open);
         }}
         style={{
           background: 'transparent',
@@ -155,17 +157,17 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onEdit, onDelete, on
         ⋮
       </button>
 
-      {/* ThreeDotMenu dropdown */}
-      <div data-menu-dropdown="true">
-        <ThreeDotMenu
-          isOpen={menuOpen}
-          onClose={() => setMenuOpen(false)}
-          onEdit={() => onEdit(product)}
-          onDelete={() => { menuActionFiredRef.current = true; onDelete(product.id); }}
-          onStatusChange={(newStatus) => { menuActionFiredRef.current = true; onStatusChange(product.id, newStatus); }}
-          currentStatus={status}
-        />
-      </div>
+      {/* ThreeDotMenu dropdown — portalled to <body> to escape the
+          SwipeableRow's overflow: hidden and transform stacking context */}
+      <ThreeDotMenu
+        isOpen={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        onEdit={() => onEdit(product)}
+        onDelete={() => { menuActionFiredRef.current = true; onDelete(product.id); }}
+        onStatusChange={(newStatus) => { menuActionFiredRef.current = true; onStatusChange(product.id, newStatus); }}
+        currentStatus={status}
+        anchorEl={triggerEl}
+      />
     </div>
   );
 };

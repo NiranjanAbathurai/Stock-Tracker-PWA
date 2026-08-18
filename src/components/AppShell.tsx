@@ -7,6 +7,7 @@ import { DEFAULT_CATEGORIES } from '../config/categories';
 import Header from './Header';
 import SideDrawer from './SideDrawer';
 import BottomNav from './BottomNav';
+import InstallFooter, { useShowInstallBanner } from './InstallFooter';
 import { VoiceAssistantFAB } from './VoiceAssistantFAB';
 import OnboardingTutorial from './OnboardingTutorial';
 import SpotlightTour from './SpotlightTour';
@@ -27,6 +28,7 @@ const AppShell: React.FC<AppShellProps> = ({ onLogout }) => {
   const { homes, addProduct, deleteProduct, updateProduct } = useHomes();
   const { isSupported: pushSupported, isSubscribed, toggle: toggleNotifications } = usePushNotification();
   const { shouldShowOnboarding, completeOnboarding, shouldShowSpotlight, completeSpotlight } = useOnboarding();
+  const showInstallBanner = useShowInstallBanner();
 
   // Auto-select first home when homes load
   useEffect(() => {
@@ -107,7 +109,15 @@ const AppShell: React.FC<AppShellProps> = ({ onLogout }) => {
       />
 
       {/* Main Content */}
-      <main style={{ flex: 1, overflowY: 'auto', padding: '16px', paddingBottom: '80px' }}>
+      <main
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '16px',
+          // Clear the fixed bottom stack (nav + optional install banner)
+          paddingBottom: showInstallBanner ? '132px' : '80px',
+        }}
+      >
         {activeTab === 'dashboard' && (
           <DashboardScreen selectedHomeId={selectedHomeId} onSelectHome={setSelectedHomeId} />
         )}
@@ -126,8 +136,23 @@ const AppShell: React.FC<AppShellProps> = ({ onLogout }) => {
         onUpdateProduct={updateProduct}
       />
 
-      {/* Bottom Nav */}
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      {/* Bottom stack: nav, with the install banner below it in browser tabs */}
+      <div
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1000,
+        }}
+      >
+        <BottomNav
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          safeAreaBottom={!showInstallBanner}
+        />
+        <InstallFooter />
+      </div>
     </div>
   );
 };

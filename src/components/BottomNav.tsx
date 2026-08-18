@@ -4,6 +4,8 @@ import { Tab } from '../types';
 interface BottomNavProps {
   activeTab: Tab;
   onTabChange: (tab: Tab) => void;
+  /** Add the iOS home-indicator inset — set when this is the bottom-most bar. */
+  safeAreaBottom?: boolean;
 }
 
 const tabs: { key: Tab; label: string; icon: (active: boolean) => React.ReactNode }[] = [
@@ -40,22 +42,18 @@ const tabs: { key: Tab; label: string; icon: (active: boolean) => React.ReactNod
   },
 ];
 
-const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) => {
+const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange, safeAreaBottom = true }) => {
   return (
     <nav
       style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
         height: '64px',
+        boxSizing: 'content-box',
         background: 'var(--nav-bg)',
         borderTop: '1px solid var(--border-color)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-around',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        zIndex: 1000,
+        paddingBottom: safeAreaBottom ? 'env(safe-area-inset-bottom, 0px)' : 0,
       }}
     >
       {tabs.map((tab) => {

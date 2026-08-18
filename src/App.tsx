@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { SplashScreen } from './components/SplashScreen';
 import { SignInForm } from './components/SignInForm';
@@ -7,6 +7,7 @@ import AppShell from './components/AppShell';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import { HomesProvider } from './contexts/HomesContext';
 import { InstallPage } from './components/InstallPage';
+import InstallFooter from './components/InstallFooter';
 
 export const App = () => {
   const { authState, error, login, logout, clearError } = useAuth();
@@ -40,8 +41,8 @@ export const App = () => {
     return (
       <ErrorBoundary>
         <HomesProvider>
+          {/* AppShell renders the install banner itself, below the bottom nav */}
           <AppShell onLogout={logout} />
-          <InstallFooter />
         </HomesProvider>
       </ErrorBoundary>
     );
@@ -123,73 +124,10 @@ export const App = () => {
           </p>
         </div>
       </div>
-      <InstallFooter />
+      {/* No bottom nav on the auth screens — pin the banner to the viewport */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 900 }}>
+        <InstallFooter />
+      </div>
     </>
-  );
-};
-
-/* ============ Fixed Footer Install Banner ============ */
-const InstallFooter = () => {
-  const [isStandalone] = useState(() => window.matchMedia('(display-mode: standalone)').matches);
-  const [deferredPrompt, setDeferredPrompt] = useState<Event | null>(null);
-
-  useEffect(() => {
-    if (isStandalone) return;
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, [isStandalone]);
-
-  // Don't show if already standalone
-  if (isStandalone) return null;
-
-  const handleInstall = async () => {
-    if (deferredPrompt) {
-      const promptEvent = deferredPrompt as unknown as { prompt: () => void; userChoice: Promise<{ outcome: string }> };
-      promptEvent.prompt();
-      await promptEvent.userChoice;
-      setDeferredPrompt(null);
-    } else {
-      alert('To install: Open browser menu (⋮) → "Install app" or "Add to Home Screen"');
-    }
-  };
-
-  return (
-    <div style={{
-      position: 'fixed',
-      bottom: '68px',
-      left: 0,
-      right: 0,
-      padding: '0.6rem 1rem',
-      background: '#111',
-      borderTop: '1px solid #1db954',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: '0.5rem',
-      zIndex: 900,
-    }}>
-      <span style={{ color: '#ccc', fontSize: '0.8rem' }}>📱 Install as app</span>
-      <button
-        type="button"
-        onClick={handleInstall}
-        style={{
-          background: '#1db954',
-          color: '#fff',
-          border: 'none',
-          borderRadius: '6px',
-          padding: '0.4rem 0.75rem',
-          fontSize: '0.75rem',
-          fontWeight: 600,
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Install
-      </button>
-    </div>
   );
 };

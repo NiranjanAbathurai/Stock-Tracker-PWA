@@ -1,6 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import type { Product, AvailabilityStatus } from '../../types';
 import SwipeableRow from '../ui/SwipeableRow';
+import ThreeDotMenu from '../ui/ThreeDotMenu';
+
+/** Ignore clicks that came from a row's action menu (or its trigger). */
+function isMenuClick(e: React.MouseEvent): boolean {
+  const target = e.target as HTMLElement;
+  return !!(target.closest('[data-menu-trigger]') || target.closest('[data-menu-dropdown]'));
+}
 
 interface ExpiringSoonProps {
   products: Product[];
@@ -210,104 +217,6 @@ const AccordionSection: React.FC<AccordionSectionProps> = ({
   );
 };
 
-// ─── Inline Three-Dot Menu for Dashboard Items ───
-interface ItemMenuProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onStatusChange: (status: AvailabilityStatus) => void;
-  currentStatus: AvailabilityStatus;
-}
-
-const ItemMenu: React.FC<ItemMenuProps> = ({ isOpen, onClose, onEdit, onDelete, onStatusChange, currentStatus }) => {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-    const timer = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
-    }, 0);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
-  const menuItems: { label: string; onClick: () => void; color?: string; hidden?: boolean }[] = [
-    { label: '✏️ Edit', onClick: onEdit },
-    {
-      label: '✅ Mark Available',
-      onClick: () => onStatusChange('available'),
-      hidden: currentStatus === 'available',
-    },
-    {
-      label: '⚠️ Mark Low Stock',
-      onClick: () => onStatusChange('low'),
-      hidden: currentStatus === 'low',
-    },
-    {
-      label: '❌ Mark Out of Stock',
-      onClick: () => onStatusChange('out_of_stock'),
-      hidden: currentStatus === 'out_of_stock',
-    },
-    { label: '🗑️ Delete', onClick: onDelete, color: 'var(--accent-red)' },
-  ];
-
-  return (
-    <div
-      ref={menuRef}
-      style={{
-        position: 'absolute',
-        top: '100%',
-        right: '0',
-        marginTop: '4px',
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-color)',
-        borderRadius: '10px',
-        padding: '4px 0',
-        minWidth: '170px',
-        zIndex: 11000,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-      }}
-    >
-      {menuItems
-        .filter((item) => !item.hidden)
-        .map((item, idx) => (
-          <button
-            key={idx}
-            onClick={(e) => {
-              e.stopPropagation();
-              item.onClick();
-              onClose();
-            }}
-            style={{
-              display: 'block',
-              width: '100%',
-              padding: '10px 14px',
-              background: 'transparent',
-              border: 'none',
-              color: item.color || 'var(--text-primary)',
-              fontSize: '0.8rem',
-              textAlign: 'left',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
-    </div>
-  );
-};
-
 // ─── Expiry Item Row ───
 interface ExpiryItemProps {
   item: Product & { daysLeft: number };
@@ -318,6 +227,7 @@ interface ExpiryItemProps {
 
 const ExpiryItem: React.FC<ExpiryItemProps> = ({ item, onEdit, onStatusChange, onDelete }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [triggerEl, setTriggerEl] = useState<HTMLButtonElement | null>(null);
 
   const getIndicatorColor = (days: number) => {
     if (days < 0) return 'var(--accent-red)';
@@ -340,7 +250,10 @@ const ExpiryItem: React.FC<ExpiryItemProps> = ({ item, onEdit, onStatusChange, o
 
   return (
     <div
-      onClick={() => onEdit?.(item)}
+      onClick={(e) => {
+        if (isMenuClick(e)) return;
+        onEdit?.(item);
+      }}
       style={{
         position: 'relative',
         display: 'flex',
@@ -400,9 +313,11 @@ const ExpiryItem: React.FC<ExpiryItemProps> = ({ item, onEdit, onStatusChange, o
       {/* Three-dot menu button */}
       {(onStatusChange || onDelete) && (
         <button
+          ref={setTriggerEl}
+          data-menu-trigger="true"
           onClick={(e) => {
             e.stopPropagation();
-            setMenuOpen(true);
+            setMenuOpen((open) => !open);
           }}
           style={{
             background: 'transparent',
@@ -421,17 +336,16 @@ const ExpiryItem: React.FC<ExpiryItemProps> = ({ item, onEdit, onStatusChange, o
         </button>
       )}
 
-      {/* Menu dropdown */}
-      {menuOpen && (
-        <ItemMenu
-          isOpen={menuOpen}
-          onClose={() => setMenuOpen(false)}
-          onEdit={() => onEdit?.(item)}
-          onDelete={() => onDelete?.(item.id)}
-          onStatusChange={(status) => onStatusChange?.(item.id, status)}
-          currentStatus={currentStatus}
-        />
-      )}
+      {/* Menu dropdown (portalled to <body>) */}
+      <ThreeDotMenu
+        isOpen={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        onEdit={() => onEdit?.(item)}
+        onDelete={() => onDelete?.(item.id)}
+        onStatusChange={(status) => onStatusChange?.(item.id, status)}
+        currentStatus={currentStatus}
+        anchorEl={triggerEl}
+      />
     </div>
   );
 };
@@ -446,12 +360,16 @@ interface OutOfStockItemProps {
 
 const OutOfStockItem: React.FC<OutOfStockItemProps> = ({ item, onEdit, onStatusChange, onDelete }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [triggerEl, setTriggerEl] = useState<HTMLButtonElement | null>(null);
 
   const currentStatus: AvailabilityStatus = item.availability_status || 'out_of_stock';
 
   return (
     <div
-      onClick={() => onEdit?.(item)}
+      onClick={(e) => {
+        if (isMenuClick(e)) return;
+        onEdit?.(item);
+      }}
       style={{
         position: 'relative',
         display: 'flex',
@@ -511,9 +429,11 @@ const OutOfStockItem: React.FC<OutOfStockItemProps> = ({ item, onEdit, onStatusC
       {/* Three-dot menu button */}
       {(onStatusChange || onDelete) && (
         <button
+          ref={setTriggerEl}
+          data-menu-trigger="true"
           onClick={(e) => {
             e.stopPropagation();
-            setMenuOpen(true);
+            setMenuOpen((open) => !open);
           }}
           style={{
             background: 'transparent',
@@ -532,17 +452,16 @@ const OutOfStockItem: React.FC<OutOfStockItemProps> = ({ item, onEdit, onStatusC
         </button>
       )}
 
-      {/* Menu dropdown */}
-      {menuOpen && (
-        <ItemMenu
-          isOpen={menuOpen}
-          onClose={() => setMenuOpen(false)}
-          onEdit={() => onEdit?.(item)}
-          onDelete={() => onDelete?.(item.id)}
-          onStatusChange={(status) => onStatusChange?.(item.id, status)}
-          currentStatus={currentStatus}
-        />
-      )}
+      {/* Menu dropdown (portalled to <body>) */}
+      <ThreeDotMenu
+        isOpen={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        onEdit={() => onEdit?.(item)}
+        onDelete={() => onDelete?.(item.id)}
+        onStatusChange={(status) => onStatusChange?.(item.id, status)}
+        currentStatus={currentStatus}
+        anchorEl={triggerEl}
+      />
     </div>
   );
 };
