@@ -22,7 +22,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.png', 'icons/*.png', 'icons/*.svg', 'sw-push.js'],
+      includeAssets: ['icons/*.png', 'icons/*.svg', 'sw-push.js'],
       manifest: {
         name: 'Stock Tracker',
         short_name: 'StockTracker',
@@ -78,6 +78,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB safety net
         // Import the custom push handler into the generated service worker
         importScripts: ['/sw-push.js'],
         // Force new service worker to activate immediately (no close/reopen needed)
