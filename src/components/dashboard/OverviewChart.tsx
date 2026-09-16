@@ -12,9 +12,8 @@ const OverviewChart: React.FC<OverviewChartProps> = ({ products }) => {
   // Uses availability_status when it's meaningful (not 'available' when availability='No'),
   // otherwise falls back to the reliable availability field
   const getEffectiveStatus = (p: Product) => {
-    if (p.isExpired) return 'out_of_stock'; // Expired = out of stock in chart
-    // Trust availability_status only if it's consistent with availability
-    // If availability='No' but status='available', the migration was incomplete — use availability
+    // Use the actual availability from DB — expired products stay in their current status
+    // until the user manually changes them
     if (p.availability === 'No') return 'out_of_stock';
     if (p.availability_status === 'low') return 'low';
     return 'available';

@@ -43,11 +43,8 @@ export function HomesProvider({ children }: { children: React.ReactNode }) {
         products: ((home.products as Array<Record<string, unknown>>) || []).map((p) => {
           const expiryDate = p.expiry_date ? new Date(p.expiry_date as string) : null;
           const isExpired = expiryDate !== null && expiryDate < today;
-          const wasAvailable = p.availability === 'Yes';
-          const isNowExpiredAndUnavailable = isExpired && wasAvailable;
-          // Display-only override: expired items show as unavailable in UI
-          // but we do NOT write this back to DB — the expiry-notification cron handles expired items separately
-          const availability: 'Yes' | 'No' = isNowExpiredAndUnavailable ? 'No' : (p.availability as 'Yes' | 'No') || 'Yes';
+          // Keep the original availability from DB — let the user decide when to mark as unavailable
+          const availability: 'Yes' | 'No' = (p.availability as 'Yes' | 'No') || 'Yes';
 
           // Read persisted availability_status from DB; fall back to deriving from availability
           const dbStatus = p.availability_status as AvailabilityStatus | undefined;
@@ -61,7 +58,7 @@ export function HomesProvider({ children }: { children: React.ReactNode }) {
             expiryDate: (p.expiry_date as string) || '',
             availability,
             availability_status: availabilityStatus,
-            isExpired: isNowExpiredAndUnavailable,
+            isExpired, // Visual flag only — does not change availability
           };
         }),
       }));
