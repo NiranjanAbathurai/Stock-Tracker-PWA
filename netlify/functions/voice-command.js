@@ -142,9 +142,24 @@ const GROQ_LLM_FALLBACKS = [
 ];
 const GROQ_WHISPER_FALLBACKS = ['whisper-large-v3-turbo', 'whisper-large-v3', 'distil-whisper-large-v3-en'];
 
+// Preferred Groq model patterns — prioritized for JSON command processing
+const GROQ_PREFERRED_PATTERNS = [
+  /^openai\/gpt-oss-120b/,
+  /^openai\/gpt-oss/,
+  /^qwen.*27b/i,
+  /^qwen/i,
+  /^llama.*70b/i,
+  /^meta-llama.*maverick/i,
+  /^meta-llama.*scout/i,
+  /^llama/i,
+  /^compound-beta$/,
+  /^gemma/i,
+  /^mixtral/i,
+];
+
 /**
  * Discover available Groq models dynamically.
- * Falls back to the static list if the API call fails.
+ * Prioritizes models best suited for JSON command processing.
  */
 async function discoverGroqModels(apiKey, type = 'llm') {
   try {
@@ -156,17 +171,36 @@ async function discoverGroqModels(apiKey, type = 'llm') {
     if (data && data.data && Array.isArray(data.data)) {
       if (type === 'whisper') {
         const whisperModels = data.data
-          .filter(m => m.id && m.id.includes('whisper'))
+          .filter(m => m.id && (m.id.includes('whisper') || m.id.includes('distil-whisper')))
           .map(m => m.id);
         console.log(`[voice-command] Groq whisper models: ${whisperModels.join(', ')}`);
         return whisperModels.length > 0 ? whisperModels : null;
       }
-      // Filter for chat-capable models
+      // Filter out non-chat models
       const chatModels = data.data
-        .filter(m => m.id && !m.id.includes('whisper') && !m.id.includes('tts') && !m.id.includes('guard'))
+        .filter(m => m.id &&
+          !m.id.includes('whisper') &&
+          !m.id.includes('tts') &&
+          !m.id.includes('guard') &&
+          !m.id.includes('embed') &&
+          !m.id.includes('orpheus') &&
+          !m.id.includes('allam')
+        )
         .map(m => m.id);
-      console.log(`[voice-command] Groq LLM models: ${chatModels.join(', ')}`);
-      return chatModels.length > 0 ? chatModels : null;
+
+      // Sort by preference
+      const sorted = [];
+      for (const pattern of GROQ_PREFERRED_PATTERNS) {
+        for (const model of chatModels) {
+          if (pattern.test(model) && !sorted.includes(model)) sorted.push(model);
+        }
+      }
+      for (const model of chatModels) {
+        if (!sorted.includes(model)) sorted.push(model);
+      }
+
+      console.log(`[voice-command] Groq LLM models (prioritized): ${sorted.join(', ')}`);
+      return sorted.length > 0 ? sorted : null;
     }
     return null;
   } catch (err) {
@@ -286,9 +320,9 @@ async function groqProcessCommand(provider, transcript, contextText, conversatio
 }
 
 /**
- * Discover available Gemini models dynamically.
+ * Discover available Gemini models and return a prioritized list.
  */
-async function discoverGeminiModel(provider) {
+async function discoverGeminiModels(provider) {
   try {
     const response = await fetch(`${provider.baseUrl}/models?key=${provider.key}`);
     if (!response.ok) return null;
@@ -297,11 +331,24 @@ async function discoverGeminiModel(provider) {
       const models = data.models
         .filter(m => m.name && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
         .map(m => m.name.replace('models/', ''));
-      const flashModel = models.find(m => m.includes('flash') && !m.includes('thinking'));
-      const proModel = models.find(m => m.includes('pro'));
-      const chosen = flashModel || proModel || models[0];
-      console.log(`[voice-command] Gemini discovered models: ${models.slice(0, 8).join(', ')}... | Chosen: ${chosen}`);
-      return chosen || null;
+      
+      const prioritized = [];
+      const aliases = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-pro-latest'];
+      for (const alias of aliases) {
+        if (models.includes(alias)) prioritized.push(alias);
+      }
+      for (const m of models) {
+        if (m.startsWith('gemma-') && !prioritized.includes(m)) prioritized.push(m);
+      }
+      for (const m of models) {
+        if (m.includes('flash') && !m.includes('thinking') && !m.includes('tts') && !prioritized.includes(m)) prioritized.push(m);
+      }
+      for (const m of models) {
+        if (m.includes('pro') && !m.includes('tts') && !prioritized.includes(m)) prioritized.push(m);
+      }
+      
+      console.log(`[voice-command] Gemini models to try: ${prioritized.slice(0, 6).join(', ')}`);
+      return prioritized.length > 0 ? prioritized : null;
     }
     return null;
   } catch (err) {
@@ -321,19 +368,29 @@ async function callGeminiWithDiscovery(provider, requestBody) {
     body: JSON.stringify(requestBody)
   });
 
-  // If model not found, discover and retry
+  // If model not found, discover and try multiple models
   if (!response.ok && response.status === 404) {
     console.warn(`[voice-command] Gemini model "${modelToUse}" not found. Discovering...`);
-    const discovered = await discoverGeminiModel(provider);
-    if (discovered && discovered !== modelToUse) {
-      modelToUse = discovered;
-      apiUrl = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
-      console.log(`[voice-command] Retrying with: ${modelToUse}`);
-      response = await fetchWithRetry(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
+    const discoveredModels = await discoverGeminiModels(provider);
+    if (discoveredModels && discoveredModels.length > 0) {
+      for (const candidateModel of discoveredModels) {
+        if (candidateModel === modelToUse) continue;
+        apiUrl = `${provider.baseUrl}/models/${candidateModel}:generateContent?key=${provider.key}`;
+        console.log(`[voice-command] Trying Gemini model: ${candidateModel}`);
+        response = await fetchWithRetry(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+        if (response.ok) {
+          modelToUse = candidateModel;
+          console.log(`[voice-command] Gemini success with: ${candidateModel}`);
+          break;
+        }
+        const status = response.status;
+        console.warn(`[voice-command] Gemini model "${candidateModel}" failed (${status})`);
+        if (status !== 404 && status !== 400) break;
+      }
     }
   }
 
