@@ -91,14 +91,15 @@ If you cannot extract anything:
 `;
 
 async function fetchWithRetry(url, options, maxRetries = 1) {
-  const RETRYABLE = [500, 503, 529];
+  const RETRYABLE = [429, 500, 503, 529];
   let response;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     response = await fetch(url, options);
     if (response.ok || !RETRYABLE.includes(response.status) || attempt === maxRetries) {
       return response;
     }
-    const delayMs = 1000 * Math.pow(2, attempt);
+    // Backoff: longer for 429 rate limits
+    const delayMs = response.status === 429 ? 2000 * Math.pow(2, attempt) : 1000 * Math.pow(2, attempt);
     await new Promise(resolve => setTimeout(resolve, delayMs));
   }
   return response;
