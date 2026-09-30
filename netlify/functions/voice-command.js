@@ -43,7 +43,7 @@ function buildProviderChain() {
     chain.push({
       provider: 'gemini',
       key: process.env.GEMINI_API_KEY_FALLBACK,
-      model: process.env.GEMINI_MODEL_FALLBACK || 'gemini-2.0-flash',
+      model: process.env.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash',
       baseUrl: process.env.GEMINI_BASE_URL_FALLBACK || 'https://generativelanguage.googleapis.com/v1beta',
       label: 'Gemini Fallback'
     });
@@ -55,7 +55,7 @@ function buildProviderChain() {
     chain.push({
       provider: 'gemini',
       key: process.env.GEMINI_API_KEY,
-      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
       baseUrl: process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
       label: 'Gemini Legacy'
     });
@@ -125,9 +125,55 @@ async function fetchWithRetry(url, options, maxRetries = 1) {
 // Statuses that should trigger fallback to the next provider (not fatal)
 const PROVIDER_FALLBACK_STATUSES = [429, 403, 404, 500, 503, 529];
 
-// Model fallback lists
-const GROQ_LLM_FALLBACKS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'meta-llama/llama-4-scout-17b-16e-instruct', 'mixtral-8x7b-32768', 'gemma2-9b-it'];
-const GROQ_WHISPER_FALLBACKS = ['whisper-large-v3-turbo', 'whisper-large-v3'];
+// Model fallback lists (updated 2026-09: Groq frequently rotates free-tier models)
+const GROQ_LLM_FALLBACKS = [
+  'llama-3.3-70b-versatile',
+  'llama-3.3-70b-specdec',
+  'llama-3.1-70b-versatile',
+  'llama-3.1-8b-instant',
+  'llama3-70b-8192',
+  'llama3-8b-8192',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'meta-llama/llama-4-maverick-17b-128e-instruct',
+  'compound-beta',
+  'compound-beta-mini',
+  'gemma2-9b-it',
+  'mixtral-8x7b-32768',
+];
+const GROQ_WHISPER_FALLBACKS = ['whisper-large-v3-turbo', 'whisper-large-v3', 'distil-whisper-large-v3-en'];
+
+/**
+ * Discover available Groq models dynamically.
+ * Falls back to the static list if the API call fails.
+ */
+async function discoverGroqModels(apiKey, type = 'llm') {
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data && data.data && Array.isArray(data.data)) {
+      if (type === 'whisper') {
+        const whisperModels = data.data
+          .filter(m => m.id && m.id.includes('whisper'))
+          .map(m => m.id);
+        console.log(`[voice-command] Groq whisper models: ${whisperModels.join(', ')}`);
+        return whisperModels.length > 0 ? whisperModels : null;
+      }
+      // Filter for chat-capable models
+      const chatModels = data.data
+        .filter(m => m.id && !m.id.includes('whisper') && !m.id.includes('tts') && !m.id.includes('guard'))
+        .map(m => m.id);
+      console.log(`[voice-command] Groq LLM models: ${chatModels.join(', ')}`);
+      return chatModels.length > 0 ? chatModels : null;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[voice-command] Failed to discover Groq models:', err.message);
+    return null;
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════
 // GROQ: Speech-to-Text via Whisper API
@@ -139,7 +185,11 @@ async function groqTranscribeAudio(provider, audioBase64, mimeType) {
   const filename = `audio.${ext}`;
   const boundary = '----FormBoundary' + Date.now().toString(36) + Math.random().toString(36).slice(2);
 
-  const modelsToTry = [provider.whisperModel, ...GROQ_WHISPER_FALLBACKS.filter(m => m !== provider.whisperModel)];
+  // Try dynamic discovery for whisper models, fall back to static list
+  const discoveredWhisper = await discoverGroqModels(provider.key, 'whisper');
+  const modelsToTry = discoveredWhisper
+    ? discoveredWhisper
+    : [provider.whisperModel, ...GROQ_WHISPER_FALLBACKS.filter(m => m !== provider.whisperModel)];
 
   for (const model of modelsToTry) {
     const bodyBuffer = Buffer.concat([
@@ -197,7 +247,11 @@ async function groqProcessCommand(provider, transcript, contextText, conversatio
     content: `User said: "${transcript}"\n\n${contextText}\n\nProcess this and return JSON. Set "userTranscript" to: "${transcript}"`
   });
 
-  const modelsToTry = [provider.llmModel, ...GROQ_LLM_FALLBACKS.filter(m => m !== provider.llmModel)];
+  // Try dynamic discovery for LLM models, fall back to static list
+  const discoveredLLM = await discoverGroqModels(provider.key, 'llm');
+  const modelsToTry = discoveredLLM
+    ? discoveredLLM
+    : [provider.llmModel, ...GROQ_LLM_FALLBACKS.filter(m => m !== provider.llmModel)];
 
   for (const model of modelsToTry) {
     const response = await fetchWithRetry(`${provider.baseUrl}/chat/completions`, {
@@ -231,6 +285,72 @@ async function groqProcessCommand(provider, transcript, contextText, conversatio
   throw err;
 }
 
+/**
+ * Discover available Gemini models dynamically.
+ */
+async function discoverGeminiModel(provider) {
+  try {
+    const response = await fetch(`${provider.baseUrl}/models?key=${provider.key}`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data && data.models && Array.isArray(data.models)) {
+      const models = data.models
+        .filter(m => m.name && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+        .map(m => m.name.replace('models/', ''));
+      const flashModel = models.find(m => m.includes('flash') && !m.includes('thinking'));
+      const proModel = models.find(m => m.includes('pro'));
+      const chosen = flashModel || proModel || models[0];
+      console.log(`[voice-command] Gemini discovered models: ${models.slice(0, 8).join(', ')}... | Chosen: ${chosen}`);
+      return chosen || null;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[voice-command] Failed to discover Gemini models:', err.message);
+    return null;
+  }
+}
+
+// Helper: make a Gemini generateContent call with auto-discovery on 404
+async function callGeminiWithDiscovery(provider, requestBody) {
+  let modelToUse = provider.model;
+  let apiUrl = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
+
+  let response = await fetchWithRetry(apiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody)
+  });
+
+  // If model not found, discover and retry
+  if (!response.ok && response.status === 404) {
+    console.warn(`[voice-command] Gemini model "${modelToUse}" not found. Discovering...`);
+    const discovered = await discoverGeminiModel(provider);
+    if (discovered && discovered !== modelToUse) {
+      modelToUse = discovered;
+      apiUrl = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
+      console.log(`[voice-command] Retrying with: ${modelToUse}`);
+      response = await fetchWithRetry(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+    }
+  }
+
+  if (!response.ok) {
+    const errText = await response.text();
+    const errMsg = `Gemini ${response.status} (${modelToUse}): ${errText.substring(0, 120)}`;
+    if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
+      const err = new Error(errMsg);
+      err.retryable = true;
+      throw err;
+    }
+    throw new Error(errMsg);
+  }
+
+  return response;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // GEMINI: Multimodal audio processing (fallback)
 // ═══════════════════════════════════════════════════════════════
@@ -251,27 +371,11 @@ async function geminiProcessAudio(provider, audioBase64, audioMime, contextText,
     ]
   });
 
-  const apiUrl = `${provider.baseUrl}/models/${provider.model}:generateContent?key=${provider.key}`;
-  const response = await fetchWithRetry(apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: geminiContents,
-      generationConfig: { maxOutputTokens: 2048, temperature: 0.3, responseMimeType: "application/json" },
-      systemInstruction: { parts: [{ text: VOICE_COMMAND_SYSTEM_PROMPT }] }
-    })
+  const response = await callGeminiWithDiscovery(provider, {
+    contents: geminiContents,
+    generationConfig: { maxOutputTokens: 2048, temperature: 0.3, responseMimeType: "application/json" },
+    systemInstruction: { parts: [{ text: VOICE_COMMAND_SYSTEM_PROMPT }] }
   });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    const errMsg = `Gemini ${response.status}: ${errText.substring(0, 120)}`;
-    if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
-      const err = new Error(errMsg);
-      err.retryable = true;
-      throw err;
-    }
-    throw new Error(errMsg);
-  }
 
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -296,27 +400,11 @@ async function geminiProcessText(provider, userText, contextText, conversationHi
     parts: [{ text: `User command: "${userText}"\n\n${contextText}\n\nProcess and return JSON. Set "userTranscript" to the exact text.` }]
   });
 
-  const apiUrl = `${provider.baseUrl}/models/${provider.model}:generateContent?key=${provider.key}`;
-  const response = await fetchWithRetry(apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: geminiContents,
-      generationConfig: { maxOutputTokens: 2048, temperature: 0.3, responseMimeType: "application/json" },
-      systemInstruction: { parts: [{ text: VOICE_COMMAND_SYSTEM_PROMPT }] }
-    })
+  const response = await callGeminiWithDiscovery(provider, {
+    contents: geminiContents,
+    generationConfig: { maxOutputTokens: 2048, temperature: 0.3, responseMimeType: "application/json" },
+    systemInstruction: { parts: [{ text: VOICE_COMMAND_SYSTEM_PROMPT }] }
   });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    const errMsg = `Gemini ${response.status}: ${errText.substring(0, 120)}`;
-    if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
-      const err = new Error(errMsg);
-      err.retryable = true;
-      throw err;
-    }
-    throw new Error(errMsg);
-  }
 
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
