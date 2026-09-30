@@ -20,7 +20,7 @@ function buildProviderChain() {
     chain.push({
       provider: 'gemini',
       key: process.env.GEMINI_API_KEY_PRIMARY,
-      model: process.env.GEMINI_MODEL_PRIMARY || 'gemini-2.0-flash',
+      model: process.env.GEMINI_MODEL_PRIMARY || 'gemini-2.5-flash',
       baseUrl: process.env.GEMINI_BASE_URL_PRIMARY || 'https://generativelanguage.googleapis.com/v1beta',
       label: 'Gemini Primary'
     });
@@ -42,7 +42,7 @@ function buildProviderChain() {
     chain.push({
       provider: 'gemini',
       key: process.env.GEMINI_API_KEY_FALLBACK,
-      model: process.env.GEMINI_MODEL_FALLBACK || 'gemini-2.0-flash',
+      model: process.env.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash',
       baseUrl: process.env.GEMINI_BASE_URL_FALLBACK || 'https://generativelanguage.googleapis.com/v1beta',
       label: 'Gemini Fallback'
     });
@@ -53,7 +53,7 @@ function buildProviderChain() {
     chain.push({
       provider: 'gemini',
       key: process.env.GEMINI_API_KEY,
-      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
       baseUrl: process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
       label: 'Gemini Legacy'
     });
@@ -290,6 +290,35 @@ exports.handler = async (event) => {
 
 // ─── Provider-specific API callers ───
 
+/**
+ * Discover available Gemini models dynamically.
+ * Returns the first flash model found, or null.
+ */
+async function discoverGeminiModel(provider) {
+  try {
+    const response = await fetch(`${provider.baseUrl}/models?key=${provider.key}`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data && data.models && Array.isArray(data.models)) {
+      // Prefer flash models (cheaper, faster), then pro
+      const models = data.models
+        .filter(m => m.name && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+        .map(m => m.name.replace('models/', ''));
+      
+      const flashModel = models.find(m => m.includes('flash') && !m.includes('thinking'));
+      const proModel = models.find(m => m.includes('pro'));
+      const chosen = flashModel || proModel || models[0];
+      
+      console.log(`[text-command] Gemini discovered models: ${models.slice(0, 8).join(', ')}... | Chosen: ${chosen}`);
+      return chosen || null;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[text-command] Failed to discover Gemini models:', err.message);
+    return null;
+  }
+}
+
 async function callGemini(provider, userMessage, conversationHistory) {
   const geminiContents = [];
 
@@ -314,18 +343,35 @@ async function callGemini(provider, userMessage, conversationHistory) {
     systemInstruction: { parts: [{ text: TEXT_COMMAND_SYSTEM_PROMPT }] }
   };
 
-  const apiUrl = `${provider.baseUrl}/models/${provider.model}:generateContent?key=${provider.key}`;
+  // Try configured model first
+  let modelToUse = provider.model;
+  let apiUrl = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
 
-  const response = await fetchWithRetry(apiUrl, {
+  let response = await fetchWithRetry(apiUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(requestBody)
   });
 
+  // If model is not found (404), try discovering available models
+  if (!response.ok && response.status === 404) {
+    console.warn(`[text-command] Gemini model "${modelToUse}" not found. Discovering available models...`);
+    const discoveredModel = await discoverGeminiModel(provider);
+    if (discoveredModel && discoveredModel !== modelToUse) {
+      modelToUse = discoveredModel;
+      apiUrl = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
+      console.log(`[text-command] Retrying with discovered model: ${modelToUse}`);
+      response = await fetchWithRetry(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+    }
+  }
+
   if (!response.ok) {
     const errText = await response.text();
-    const errMsg = `Gemini ${response.status}: ${errText.substring(0, 100)}`;
-    // For retryable statuses, throw a tagged error so the outer loop can fall through
+    const errMsg = `Gemini ${response.status} (${modelToUse}): ${errText.substring(0, 100)}`;
     if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
       const err = new Error(errMsg);
       err.retryable = true;
@@ -339,13 +385,47 @@ async function callGemini(provider, userMessage, conversationHistory) {
 }
 
 // Groq model fallback list — if one is retired, try the next
+// Updated 2026-09: Groq frequently rotates free-tier models
 const GROQ_MODEL_FALLBACKS = [
   'llama-3.3-70b-versatile',
+  'llama-3.3-70b-specdec',
+  'llama-3.1-70b-versatile',
   'llama-3.1-8b-instant',
+  'llama3-70b-8192',
+  'llama3-8b-8192',
   'meta-llama/llama-4-scout-17b-16e-instruct',
-  'mixtral-8x7b-32768',
+  'meta-llama/llama-4-maverick-17b-128e-instruct',
+  'compound-beta',
+  'compound-beta-mini',
   'gemma2-9b-it',
+  'mixtral-8x7b-32768',
 ];
+
+/**
+ * Discover available Groq models dynamically.
+ * Falls back to the static list if the API call fails.
+ */
+async function discoverGroqModels(apiKey) {
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data && data.data && Array.isArray(data.data)) {
+      // Filter for chat-capable models, prefer larger ones first
+      const chatModels = data.data
+        .filter(m => m.id && !m.id.includes('whisper') && !m.id.includes('tts') && !m.id.includes('guard'))
+        .map(m => m.id);
+      console.log(`[text-command] Groq available models: ${chatModels.join(', ')}`);
+      return chatModels.length > 0 ? chatModels : null;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[text-command] Failed to discover Groq models:', err.message);
+    return null;
+  }
+}
 
 async function callGroq(provider, userMessage, conversationHistory) {
   // Groq uses OpenAI-compatible chat completions API
@@ -364,8 +444,11 @@ async function callGroq(provider, userMessage, conversationHistory) {
 
   messages.push({ role: 'user', content: userMessage });
 
-  // Try the configured model first, then fallbacks
-  const modelsToTry = [provider.model, ...GROQ_MODEL_FALLBACKS.filter(m => m !== provider.model)];
+  // Try dynamic model discovery first, then fall back to static list
+  const discoveredModels = await discoverGroqModels(provider.key);
+  const modelsToTry = discoveredModels
+    ? discoveredModels
+    : [provider.model, ...GROQ_MODEL_FALLBACKS.filter(m => m !== provider.model)];
 
   for (const model of modelsToTry) {
     const response = await fetchWithRetry(`${provider.baseUrl}/chat/completions`, {
