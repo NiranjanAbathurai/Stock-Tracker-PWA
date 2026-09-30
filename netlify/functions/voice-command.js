@@ -110,18 +110,23 @@ const VOICE_COMMAND_SYSTEM_PROMPT = `You are a smart voice assistant for a Stock
 
 // ─── Retry helper ───
 async function fetchWithRetry(url, options, maxRetries = 1) {
-  const RETRYABLE = [500, 503, 529];
+  const RETRYABLE = [429, 500, 503, 529];
   let response;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     response = await fetch(url, options);
     if (response.ok || !RETRYABLE.includes(response.status) || attempt === maxRetries) return response;
-    await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+    // Backoff: longer for 429 rate limits
+    const delayMs = response.status === 429 ? 2000 * Math.pow(2, attempt) : 1000 * Math.pow(2, attempt);
+    await new Promise(resolve => setTimeout(resolve, delayMs));
   }
   return response;
 }
 
+// Statuses that should trigger fallback to the next provider (not fatal)
+const PROVIDER_FALLBACK_STATUSES = [429, 403, 404, 500, 503, 529];
+
 // Model fallback lists
-const GROQ_LLM_FALLBACKS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'];
+const GROQ_LLM_FALLBACKS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'meta-llama/llama-4-scout-17b-16e-instruct', 'mixtral-8x7b-32768', 'gemma2-9b-it'];
 const GROQ_WHISPER_FALLBACKS = ['whisper-large-v3-turbo', 'whisper-large-v3'];
 
 // ═══════════════════════════════════════════════════════════════
@@ -162,9 +167,17 @@ async function groqTranscribeAudio(provider, audioBase64, mimeType) {
       console.warn(`[voice-command] Whisper model "${model}" unavailable: ${errText.substring(0, 80)}`);
       continue;
     }
+    // For rate limit (429) or server errors — tag as retryable
+    if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
+      const err = new Error(`Whisper ${response.status}: ${errText.substring(0, 120)}`);
+      err.retryable = true;
+      throw err;
+    }
     throw new Error(`Whisper ${response.status}: ${errText.substring(0, 120)}`);
   }
-  throw new Error('All Groq Whisper models unavailable');
+  const err = new Error('All Groq Whisper models unavailable');
+  err.retryable = true;
+  throw err;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -204,9 +217,18 @@ async function groqProcessCommand(provider, transcript, contextText, conversatio
       console.warn(`[voice-command] Groq LLM "${model}" unavailable: ${errText.substring(0, 80)}`);
       continue;
     }
+    // For rate limit (429) or server errors — tag as retryable so outer loop
+    // can fall through to the next PROVIDER (e.g. Gemini)
+    if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
+      const err = new Error(`Groq LLM ${response.status}: ${errText.substring(0, 120)}`);
+      err.retryable = true;
+      throw err;
+    }
     throw new Error(`Groq LLM ${response.status}: ${errText.substring(0, 120)}`);
   }
-  throw new Error('All Groq LLM models unavailable');
+  const err = new Error('All Groq LLM models unavailable');
+  err.retryable = true;
+  throw err;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -242,7 +264,13 @@ async function geminiProcessAudio(provider, audioBase64, audioMime, contextText,
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Gemini ${response.status}: ${errText.substring(0, 120)}`);
+    const errMsg = `Gemini ${response.status}: ${errText.substring(0, 120)}`;
+    if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
+      const err = new Error(errMsg);
+      err.retryable = true;
+      throw err;
+    }
+    throw new Error(errMsg);
   }
 
   const data = await response.json();
@@ -281,7 +309,13 @@ async function geminiProcessText(provider, userText, contextText, conversationHi
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Gemini ${response.status}: ${errText.substring(0, 120)}`);
+    const errMsg = `Gemini ${response.status}: ${errText.substring(0, 120)}`;
+    if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
+      const err = new Error(errMsg);
+      err.retryable = true;
+      throw err;
+    }
+    throw new Error(errMsg);
   }
 
   const data = await response.json();
@@ -384,11 +418,16 @@ exports.handler = async (event) => {
           console.log(`[voice-command] Text OK via ${provider.label} | User: ${user.email}`);
           return { statusCode: 200, headers, body: JSON.stringify(parsed) };
         } catch (err) {
-          console.warn(`[voice-command] ${provider.label} text failed:`, err.message);
-          if (isLast) break;
+          console.warn(`[voice-command] ${provider.label} text failed (retryable=${!!err.retryable}):`, err.message);
+          if (!isLast) {
+            console.log(`[voice-command] Falling back to next provider...`);
+            continue;
+          }
+          break;
         }
       }
-      return { statusCode: 200, headers, body: JSON.stringify({ actions: [], needsMoreInfo: true, spokenResponse: 'AI busy. Try again shortly.', userTranscript: text, followUpQuestion: null }) };
+      const isRateLimit = true; // If we got here, all providers failed
+      return { statusCode: 200, headers, body: JSON.stringify({ actions: [], needsMoreInfo: true, spokenResponse: 'All AI services are temporarily unavailable. Please try again in a few seconds.', userTranscript: text, followUpQuestion: null }) };
     }
 
     // ─── AUDIO INPUT (Groq Whisper+LLM primary, Gemini multimodal fallback) ───
@@ -430,10 +469,11 @@ exports.handler = async (event) => {
         return { statusCode: 200, headers, body: JSON.stringify(parsed) };
 
       } catch (err) {
-        console.warn(`[voice-command] ${provider.label} audio failed:`, err.message);
+        console.warn(`[voice-command] ${provider.label} audio failed (retryable=${!!err.retryable}):`, err.message);
         if (isLast) {
           // All providers exhausted
-          return { statusCode: 200, headers, body: JSON.stringify({ actions: [], needsMoreInfo: true, spokenResponse: 'AI services unavailable. Try again later.', userTranscript: '', followUpQuestion: null }) };
+          const isRateLimit = err.message.includes('429');
+          return { statusCode: 200, headers, body: JSON.stringify({ actions: [], needsMoreInfo: true, spokenResponse: isRateLimit ? 'AI rate limit reached. Please wait a minute and try again.' : 'All AI services are temporarily unavailable. Please try again in a few seconds.', userTranscript: '', followUpQuestion: null }) };
         }
         console.log(`[voice-command] Falling back to next provider...`);
       }
