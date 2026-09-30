@@ -20,6 +20,7 @@ export type VoiceAction = {
   targetHome: string | null;
   targetHomeId: number | null;
   availability?: 'Yes' | 'No';
+  expiryDate?: string;
 };
 
 export type HomeContext = {
