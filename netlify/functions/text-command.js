@@ -63,7 +63,8 @@ function buildProviderChain() {
 }
 
 const PROVIDER_CHAIN = buildProviderChain();
-const FALLBACK_STATUSES = [429, 403, 404, 503];
+// Statuses that should trigger fallback to the next provider (not fatal)
+const PROVIDER_FALLBACK_STATUSES = [429, 403, 404, 500, 503, 529];
 
 // Shorter system prompt for text commands (saves tokens!)
 const TEXT_COMMAND_SYSTEM_PROMPT = `You are a stock tracker assistant. Process the user's text command to manage their home inventory.
@@ -98,14 +99,16 @@ const TEXT_COMMAND_SYSTEM_PROMPT = `You are a stock tracker assistant. Process t
 }`;
 
 async function fetchWithRetry(url, options, maxRetries = 1) {
-  const RETRYABLE = [500, 503, 529];
+  const RETRYABLE = [429, 500, 503, 529];
   let response;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     response = await fetch(url, options);
     if (response.ok || !RETRYABLE.includes(response.status) || attempt === maxRetries) {
       return response;
     }
-    await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+    // Backoff: 1s, then 2s (longer for 429 rate limits)
+    const delayMs = response.status === 429 ? 2000 * Math.pow(2, attempt) : 1000 * Math.pow(2, attempt);
+    await new Promise(resolve => setTimeout(resolve, delayMs));
   }
   return response;
 }
@@ -234,19 +237,32 @@ exports.handler = async (event) => {
         return { statusCode: 200, headers, body: JSON.stringify(parsedJson) };
 
       } catch (providerError) {
-        console.warn(`[text-command] ${provider.label} failed:`, providerError.message);
-        if (isLastProvider) {
-          return {
-            statusCode: 200, headers,
-            body: JSON.stringify({
-              actions: [], needsMoreInfo: true,
-              spokenResponse: 'AI is busy. Try again in a few seconds.',
-              userTranscript: text, followUpQuestion: null
-            })
-          };
+        console.warn(`[text-command] ${provider.label} failed (retryable=${!!providerError.retryable}):`, providerError.message);
+
+        // If the error is retryable (429, 503, etc.) or it's not the last provider, try next
+        if (providerError.retryable && !isLastProvider) {
+          console.log(`[text-command] Falling back to next provider...`);
+          continue;
         }
-        // Try next provider
-        continue;
+
+        // Non-retryable error (e.g. 401 bad API key) — don't try more providers of same type
+        // but DO try the next provider if available
+        if (!isLastProvider) {
+          continue;
+        }
+
+        // Last provider exhausted — return user-friendly error
+        const isRateLimit = providerError.message.includes('429');
+        return {
+          statusCode: 200, headers,
+          body: JSON.stringify({
+            actions: [], needsMoreInfo: true,
+            spokenResponse: isRateLimit
+              ? 'AI rate limit reached. Please wait a minute and try again.'
+              : 'All AI services are temporarily unavailable. Please try again in a few seconds.',
+            userTranscript: text, followUpQuestion: null
+          })
+        };
       }
     }
 
@@ -308,7 +324,14 @@ async function callGemini(provider, userMessage, conversationHistory) {
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Gemini ${response.status}: ${errText.substring(0, 100)}`);
+    const errMsg = `Gemini ${response.status}: ${errText.substring(0, 100)}`;
+    // For retryable statuses, throw a tagged error so the outer loop can fall through
+    if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
+      const err = new Error(errMsg);
+      err.retryable = true;
+      throw err;
+    }
+    throw new Error(errMsg);
   }
 
   const data = await response.json();
@@ -319,6 +342,7 @@ async function callGemini(provider, userMessage, conversationHistory) {
 const GROQ_MODEL_FALLBACKS = [
   'llama-3.3-70b-versatile',
   'llama-3.1-8b-instant',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
   'mixtral-8x7b-32768',
   'gemma2-9b-it',
 ];
@@ -366,15 +390,26 @@ async function callGroq(provider, userMessage, conversationHistory) {
     }
 
     const errText = await response.text();
-    // If model is decommissioned (400) or not found (404), try next model
+    // If model is decommissioned (400) or not found (404), try next model in the list
     if (response.status === 400 || response.status === 404) {
       console.warn(`[text-command] Groq model "${model}" unavailable, trying next...`);
       continue;
     }
 
-    // For other errors (429 rate limit, 500 server error), throw
+    // For rate limit (429) or server errors — tag as retryable so outer loop
+    // can fall through to the next PROVIDER (e.g. Gemini)
+    if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
+      const err = new Error(`Groq ${response.status}: ${errText.substring(0, 100)}`);
+      err.retryable = true;
+      throw err;
+    }
+
+    // For truly fatal errors (401 bad key, etc.), throw non-retryable
     throw new Error(`Groq ${response.status}: ${errText.substring(0, 100)}`);
   }
 
-  throw new Error('All Groq models unavailable');
+  // All models exhausted — tag as retryable so outer loop tries next provider
+  const err = new Error('All Groq models unavailable');
+  err.retryable = true;
+  throw err;
 }
