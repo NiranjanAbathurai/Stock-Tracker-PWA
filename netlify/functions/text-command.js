@@ -66,30 +66,37 @@ const PROVIDER_CHAIN = buildProviderChain();
 // Statuses that should trigger fallback to the next provider (not fatal)
 const PROVIDER_FALLBACK_STATUSES = [429, 403, 404, 500, 503, 529];
 
-// Shorter system prompt for text commands (saves tokens!)
+// System prompt for text commands — supports English, Tamil, and Tanglish
 const TEXT_COMMAND_SYSTEM_PROMPT = `You are a stock tracker assistant. Process the user's text command to manage their home inventory.
 
+## Language Support:
+- Support: English, Tamil (Unicode script), Tanglish (Tamil written in English letters)
+- Detect language and respond in the SAME language the user used
+- Tamil example: "சரி! பால் சேர்த்துவிட்டேன்." (use everyday spoken Tamil, not formal)
+- Tanglish example: "Sari! Paal add panniten." (if user types in Tanglish, respond in Tanglish)
+- product/stockType/targetHome fields MUST always be in English for DB consistency
+
 ## Actions:
-1. **add** — Add product(s). E.g. "Add milk, eggs 6, rice 2kg"
-2. **delete** — Remove product(s). E.g. "Remove milk"
-3. **update_availability** — Mark as finished/available. E.g. "Milk is finished" or "Eggs are back"
-4. **query** — Answer questions. E.g. "What's expiring?" or "Shopping list"
+1. **add** — Add product(s). E.g. "Add milk, eggs 6, rice 2kg" or "paal add pannu" or "முட்டை சேர்"
+2. **delete** — Remove product(s). E.g. "Remove milk" or "paal delete pannu"
+3. **update_availability** — Mark as finished/available. E.g. "Milk is finished" or "paal over" or "முட்டை முடிஞ்சிடுச்சு"
+4. **query** — Answer questions. E.g. "What's expiring?" or "Shopping list" or "enna vaanganum?"
 
 ## Rules:
 - Multiple items in one command → create separate actions for each
 - If only ONE home exists, use it automatically
 - If multiple homes and not specified, set needsMoreInfo=true
 - Default quantity: "1". Match stockType from categories or use "Others"
-- For "finished/over/done/empty" → update_availability with availability="No"
-- For "back/restocked/bought" → update_availability with availability="Yes"
+- For "finished/over/done/empty/mudinjiduchi/over aayiduchi" → update_availability with availability="No"
+- For "back/restocked/bought/vangiten/iruku" → update_availability with availability="Yes"
 - **For "add X as available" or "available stocks: X, Y"** → add with availability="Yes"
 - **For "add X as out of stock" or "out of stock: X"** → add with availability="No"
 - **Default for add actions: availability="Yes"** (items being added are assumed available unless stated otherwise)
 - Product names in actions must be in English
-- spokenResponse should be short and friendly
+- spokenResponse should be short and friendly, in the user's language
 - Items separated by commas, newlines, or "and" should each become a separate action
 
-## Output (JSON only, no markdown):
+## Output (JSON only, no markdown, no code blocks):
 {
   "actions": [{ "type": "add|delete|update_availability|query", "product": "name", "quantity": "1", "stockType": "category", "targetHome": "home name or null", "targetHomeId": null, "availability": "Yes|No" }],
   "needsMoreInfo": false,
@@ -231,9 +238,17 @@ exports.handler = async (event) => {
         const jsonText = jsonMatch ? jsonMatch[0] : responseText;
         const parsedJson = JSON.parse(jsonText);
 
-        if (!parsedJson.userTranscript) parsedJson.userTranscript = text;
+        // Validate response structure — must have spokenResponse at minimum
+        if (!parsedJson.spokenResponse && !parsedJson.actions) {
+          console.warn(`[text-command] ${provider.label} returned invalid JSON structure:`, JSON.stringify(parsedJson).substring(0, 200));
+          if (!isLastProvider) continue; // Try next provider
+        }
 
-        console.log(`[text-command] Success via ${provider.label} for ${user.email}`);
+        if (!parsedJson.userTranscript) parsedJson.userTranscript = text;
+        if (!parsedJson.actions) parsedJson.actions = [];
+        if (parsedJson.spokenResponse === undefined) parsedJson.spokenResponse = 'Command processed.';
+
+        console.log(`[text-command] Success via ${provider.label} for ${user.email} | Response: ${(parsedJson.spokenResponse || '').substring(0, 80)}`);
         return { statusCode: 200, headers, body: JSON.stringify(parsedJson) };
 
       } catch (providerError) {
@@ -291,26 +306,40 @@ exports.handler = async (event) => {
 // ─── Provider-specific API callers ───
 
 /**
- * Discover available Gemini models dynamically.
- * Returns the first flash model found, or null.
+ * Discover available Gemini models and return a prioritized list to try.
  */
-async function discoverGeminiModel(provider) {
+async function discoverGeminiModels(provider) {
   try {
     const response = await fetch(`${provider.baseUrl}/models?key=${provider.key}`);
     if (!response.ok) return null;
     const data = await response.json();
     if (data && data.models && Array.isArray(data.models)) {
-      // Prefer flash models (cheaper, faster), then pro
       const models = data.models
         .filter(m => m.name && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
         .map(m => m.name.replace('models/', ''));
       
-      const flashModel = models.find(m => m.includes('flash') && !m.includes('thinking'));
-      const proModel = models.find(m => m.includes('pro'));
-      const chosen = flashModel || proModel || models[0];
+      // Prioritize: aliases first (always resolve to latest), then specific versions
+      const prioritized = [];
+      // Try aliases first — these always point to the latest available version
+      const aliases = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-pro-latest'];
+      for (const alias of aliases) {
+        if (models.includes(alias)) prioritized.push(alias);
+      }
+      // Then try gemma models (open, usually available on free tier)
+      for (const m of models) {
+        if (m.startsWith('gemma-') && !prioritized.includes(m)) prioritized.push(m);
+      }
+      // Then flash models
+      for (const m of models) {
+        if (m.includes('flash') && !m.includes('thinking') && !m.includes('tts') && !prioritized.includes(m)) prioritized.push(m);
+      }
+      // Then pro models
+      for (const m of models) {
+        if (m.includes('pro') && !m.includes('tts') && !prioritized.includes(m)) prioritized.push(m);
+      }
       
-      console.log(`[text-command] Gemini discovered models: ${models.slice(0, 8).join(', ')}... | Chosen: ${chosen}`);
-      return chosen || null;
+      console.log(`[text-command] Gemini models to try: ${prioritized.slice(0, 6).join(', ')}`);
+      return prioritized.length > 0 ? prioritized : null;
     }
     return null;
   } catch (err) {
@@ -353,19 +382,29 @@ async function callGemini(provider, userMessage, conversationHistory) {
     body: JSON.stringify(requestBody)
   });
 
-  // If model is not found (404), try discovering available models
+  // If model is not found (404), try discovering and iterating available models
   if (!response.ok && response.status === 404) {
     console.warn(`[text-command] Gemini model "${modelToUse}" not found. Discovering available models...`);
-    const discoveredModel = await discoverGeminiModel(provider);
-    if (discoveredModel && discoveredModel !== modelToUse) {
-      modelToUse = discoveredModel;
-      apiUrl = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
-      console.log(`[text-command] Retrying with discovered model: ${modelToUse}`);
-      response = await fetchWithRetry(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
+    const discoveredModels = await discoverGeminiModels(provider);
+    if (discoveredModels && discoveredModels.length > 0) {
+      for (const candidateModel of discoveredModels) {
+        if (candidateModel === modelToUse) continue; // Already tried
+        apiUrl = `${provider.baseUrl}/models/${candidateModel}:generateContent?key=${provider.key}`;
+        console.log(`[text-command] Trying Gemini model: ${candidateModel}`);
+        response = await fetchWithRetry(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+        if (response.ok) {
+          modelToUse = candidateModel;
+          console.log(`[text-command] Gemini success with discovered model: ${candidateModel}`);
+          break;
+        }
+        const status = response.status;
+        console.warn(`[text-command] Gemini model "${candidateModel}" failed (${status})`);
+        if (status !== 404 && status !== 400) break; // Non-model errors — stop trying
+      }
     }
   }
 
@@ -401,9 +440,24 @@ const GROQ_MODEL_FALLBACKS = [
   'mixtral-8x7b-32768',
 ];
 
+// Preferred Groq model patterns — prioritized for JSON command processing
+const GROQ_PREFERRED_PATTERNS = [
+  /^openai\/gpt-oss-120b/,     // OpenAI large — best for structured JSON
+  /^openai\/gpt-oss/,          // Any OpenAI model
+  /^qwen.*27b/i,               // Qwen large
+  /^qwen/i,                    // Any Qwen
+  /^llama.*70b/i,              // Llama 70B
+  /^meta-llama.*maverick/i,    // Llama 4 Maverick
+  /^meta-llama.*scout/i,       // Llama 4 Scout
+  /^llama/i,                   // Any Llama
+  /^compound-beta$/,           // Groq compound
+  /^gemma/i,                   // Gemma
+  /^mixtral/i,                 // Mixtral
+];
+
 /**
  * Discover available Groq models dynamically.
- * Falls back to the static list if the API call fails.
+ * Prioritizes models best suited for JSON command processing.
  */
 async function discoverGroqModels(apiKey) {
   try {
@@ -413,12 +467,34 @@ async function discoverGroqModels(apiKey) {
     if (!response.ok) return null;
     const data = await response.json();
     if (data && data.data && Array.isArray(data.data)) {
-      // Filter for chat-capable models, prefer larger ones first
+      // Filter out non-chat models (whisper, tts, guard, embedding, etc.)
       const chatModels = data.data
-        .filter(m => m.id && !m.id.includes('whisper') && !m.id.includes('tts') && !m.id.includes('guard'))
+        .filter(m => m.id &&
+          !m.id.includes('whisper') &&
+          !m.id.includes('tts') &&
+          !m.id.includes('guard') &&
+          !m.id.includes('embed') &&
+          !m.id.includes('orpheus') &&    // Audio/speech models
+          !m.id.includes('allam')          // Arabic-only model
+        )
         .map(m => m.id);
-      console.log(`[text-command] Groq available models: ${chatModels.join(', ')}`);
-      return chatModels.length > 0 ? chatModels : null;
+
+      // Sort by preference — best models first
+      const sorted = [];
+      for (const pattern of GROQ_PREFERRED_PATTERNS) {
+        for (const model of chatModels) {
+          if (pattern.test(model) && !sorted.includes(model)) {
+            sorted.push(model);
+          }
+        }
+      }
+      // Add any remaining models not matched by patterns
+      for (const model of chatModels) {
+        if (!sorted.includes(model)) sorted.push(model);
+      }
+
+      console.log(`[text-command] Groq available models (prioritized): ${sorted.join(', ')}`);
+      return sorted.length > 0 ? sorted : null;
     }
     return null;
   } catch (err) {
