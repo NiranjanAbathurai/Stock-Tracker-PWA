@@ -21,17 +21,16 @@ const HomeSelector: React.FC<HomeSelectorProps> = ({ homes, selectedHomeId, onSe
             key={home.id}
             onClick={() => onSelect(home.id)}
             style={{
-              padding: '8px 16px',
-              borderRadius: '20px',
-              border: isActive ? '1.5px solid var(--accent-green)' : '1.5px solid var(--border-color)',
-              background: isActive ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-card)',
+              border: 'none',
+              background: 'transparent',
               color: isActive ? 'var(--accent-green)' : 'var(--text-secondary)',
               fontSize: '0.85rem',
               fontWeight: 500,
-              cursor: 'pointer',
               whiteSpace: 'nowrap',
               transition: 'all 0.2s ease',
               fontFamily: 'inherit',
+              padding: 0,
+              cursor: 'pointer',
             }}
           >
             🏠 {home.name}

@@ -4,6 +4,7 @@ import { useHomes } from '../../hooks/useHomes';
 import type { Product } from '../../types';
 import HomeSelector from '../dashboard/HomeSelector';
 import OverviewChart from '../dashboard/OverviewChart';
+import DishSuggestionsBanner from '../dashboard/DishSuggestionsBanner';
 import ExpiringSoon from '../dashboard/ExpiringSoon';
 import AddItemSheet from '../dashboard/AddItemSheet';
 import EditProductModal from '../inventory/EditProductModal';
@@ -285,15 +286,17 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ selectedHomeId, onSel
         </p>
       </div>
 
-      {/* Home Selector */}
-      <HomeSelector
-        homes={homes}
-        selectedHomeId={selectedHomeId}
-        onSelect={onSelectHome}
-      />
+      {/* Dish Suggestions Banner */}
+      <DishSuggestionsBanner products={products} />
 
-      {/* Overview Chart */}
-      <OverviewChart products={products} />
+      {/* Overview Chart with Home Selector inside the card */}
+      <OverviewChart products={products}>
+        <HomeSelector
+          homes={homes}
+          selectedHomeId={selectedHomeId}
+          onSelect={onSelectHome}
+        />
+      </OverviewChart>
 
       {/* Expiring Soon */}
       <div data-tour-id="tour-product-list">

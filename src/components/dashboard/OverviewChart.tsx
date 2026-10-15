@@ -3,9 +3,11 @@ import type { Product } from '../../types';
 
 interface OverviewChartProps {
   products: Product[];
+  /** Optional content rendered inside the card, below the chart & stats */
+  children?: React.ReactNode;
 }
 
-const OverviewChart: React.FC<OverviewChartProps> = ({ products }) => {
+const OverviewChart: React.FC<OverviewChartProps> = ({ products, children }) => {
   const total = products.length;
 
   // Count by availability status
@@ -35,63 +37,76 @@ const OverviewChart: React.FC<OverviewChartProps> = ({ products }) => {
     <div style={{ marginTop: '16px' }}>
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '24px',
           background: 'var(--bg-card)',
           borderRadius: '16px',
           padding: '20px',
         }}
       >
-        {/* Circular Progress */}
-        <div style={{ position: 'relative', flexShrink: 0 }}>
-          <svg width="120" height="120" viewBox="0 0 120 120">
-            {/* Background circle */}
-            <circle
-              cx="60"
-              cy="60"
-              r={radius}
-              fill="none"
-              stroke="var(--bg-input)"
-              strokeWidth={strokeWidth}
-            />
-            {/* Progress circle */}
-            <circle
-              cx="60"
-              cy="60"
-              r={radius}
-              fill="none"
-              stroke="var(--accent-green)"
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              strokeDashoffset={strokeDashoffset}
-              transform="rotate(-90 60 60)"
-              style={{ transition: 'stroke-dashoffset 0.5s ease' }}
-            />
-          </svg>
-          <div
-            style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              textAlign: 'center',
-            }}
-          >
-            <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-              {percentage}%
+        {/* Chart + Stats row */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '24px',
+          }}
+        >
+          {/* Circular Progress */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              {/* Background circle */}
+              <circle
+                cx="60"
+                cy="60"
+                r={radius}
+                fill="none"
+                stroke="var(--bg-input)"
+                strokeWidth={strokeWidth}
+              />
+              {/* Progress circle */}
+              <circle
+                cx="60"
+                cy="60"
+                r={radius}
+                fill="none"
+                stroke="var(--accent-green)"
+                strokeWidth={strokeWidth}
+                strokeLinecap="round"
+                strokeDasharray={circumference}
+                strokeDashoffset={strokeDashoffset}
+                transform="rotate(-90 60 60)"
+                style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+              />
+            </svg>
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                {percentage}%
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>stocked</div>
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>stocked</div>
+          </div>
+
+          {/* Stat Cards */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
+            <StatCard label="Available" count={available} color="var(--accent-green)" />
+            <StatCard label="Low Stock" count={lowStock} color="var(--accent-orange)" />
+            <StatCard label="Out of Stock" count={outOfStock} color="var(--accent-red)" />
           </div>
         </div>
 
-        {/* Stat Cards */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
-          <StatCard label="Available" count={available} color="var(--accent-green)" />
-          <StatCard label="Low Stock" count={lowStock} color="var(--accent-orange)" />
-          <StatCard label="Out of Stock" count={outOfStock} color="var(--accent-red)" />
-        </div>
+        {/* Home selector rendered inside the card box */}
+        {children && (
+          <div style={{ marginTop: '16px' }}>
+            {children}
+          </div>
+        )}
       </div>
 
       {total === 0 && (

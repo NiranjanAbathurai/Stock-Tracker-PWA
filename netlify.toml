@@ -49,3 +49,9 @@
 #   Evening:  ~6:00 PM local time
 [functions."smart-reminder"]
   schedule = "30 * * * *"
+
+# Dish suggestion cron — runs every hour at :15
+# Analyzes available inventory and suggests dishes users can cook.
+# Processes at 7:00 AM and 5:00 PM in each user's local timezone.
+[functions."dish-suggestions"]
+  schedule = "15 * * * *"
