@@ -267,7 +267,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ selectedHomeId, onSel
       <div>
         <h1
           style={{
-            fontSize: '1.3rem',
+            fontSize: '1rem',
             fontWeight: 700,
             color: 'var(--text-primary)',
             margin: 0,
