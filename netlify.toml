@@ -38,13 +38,14 @@
   status = 200
 
 # Scheduled function for daily expiry notifications
-# Runs at 18:31 UTC = 12:01 AM IST
+# Runs every hour; the function checks each user's local timezone
+# and only sends if it's midnight in their timezone.
 [functions."expiry-notification"]
-  schedule = "31 18 * * *"
+  schedule = "31 * * * *"
 
-  # Smart reminder notifications — three times daily
-  # Morning:   2:30 UTC =  8:00 AM IST
-  # Afternoon: 8:30 UTC =  2:00 PM IST
-  # Evening:  13:30 UTC =  7:00 PM IST
+# Smart reminder notifications — runs every hour
+# The function checks each user's local timezone and sends at:
+#   Midday:  ~11:00 AM local time
+#   Evening:  ~6:00 PM local time
 [functions."smart-reminder"]
-  schedule = "30 2,8,13 * * *"
+  schedule = "30 * * * *"

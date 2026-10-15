@@ -1,19 +1,22 @@
 // Netlify Scheduled Function: smart-reminder.js
 //
-// Sends smart push notifications three times daily with contextual messages:
+// Sends smart push notifications at the right LOCAL time for each user:
 // Priority 1: Expiring/expired products → "⚠️ 3 items expiring today!"
 // Priority 2: Out of stock items → "🛒 5 items are out of stock. Time to restock?"
 // Priority 3: All good → "✅ All stocked up! What shall we cook tonight?" (evening only)
 //
-// Schedule (netlify.toml): 2:30 UTC = 8:00 AM IST (morning),
-//                          8:30 UTC = 2:00 PM IST (afternoon),
-//                         13:30 UTC = 7:00 PM IST (evening)
+// TIMEZONE-AWARE: Runs every hour (netlify.toml: "30 * * * *").
+// For each user, checks their IANA timezone (stored in user_metadata.timezone)
+// and only sends if the current local hour matches a notification window:
+//   Midday:  11:00 AM local
+//   Evening:  6:00 PM local
 
 try { require('dotenv').config(); } catch (e) {}
 
 const { createClient } = require('@supabase/supabase-js');
 const webpush = require('web-push');
 const { deriveStatusFromAvailability } = require('./derive-status');
+const { getLocalHour, getLocalDateString, getTimeLabel, getUserTimezone } = require('./timezone-utils');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_SECRET_KEY = process.env.SUPABASE_SERVICE_SECRET_KEY;
@@ -22,7 +25,7 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:admin@stocktracker.app';
 
 exports.handler = async (event, context) => {
-  console.log('[smart-reminder] Running smart reminder check...');
+  console.log('[smart-reminder] Running timezone-aware smart reminder check...');
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_SECRET_KEY) {
     console.error('[smart-reminder] Missing Supabase env vars.');
@@ -46,16 +49,6 @@ exports.handler = async (event, context) => {
   });
 
   try {
-    const today = new Date().toISOString().split('T')[0];
-    const currentHourUTC = new Date().getUTCHours();
-    // Schedule: 2:30 UTC = 8:00 AM IST (morning), 8:30 UTC = 2:00 PM IST (afternoon), 13:30 UTC = 7:00 PM IST (evening)
-    const isMorning = currentHourUTC < 5;                              // 2:30 UTC → true
-    const isAfternoon = currentHourUTC >= 5 && currentHourUTC < 11;    // 8:30 UTC → true
-    const isEvening = currentHourUTC >= 11;                            // 13:30 UTC → true
-    const timeLabel = isMorning ? 'morning' : isAfternoon ? 'afternoon' : 'evening';
-
-    console.log(`[smart-reminder] Time: ${timeLabel} | Today: ${today}`);
-
     // Get all users who have push subscriptions
     const { data: subscriptions, error: subError } = await supabase
       .from('push_subscriptions')
@@ -77,10 +70,34 @@ exports.handler = async (event, context) => {
     }
 
     let notificationsSent = 0;
+    let usersSkipped = 0;
 
     // Process each user
     for (const userId of Object.keys(userSubscriptions)) {
       try {
+        // Fetch user to get their timezone
+        const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(userId);
+        if (userError || !user) {
+          console.warn(`[smart-reminder] Could not fetch user ${userId}: ${userError?.message}`);
+          continue;
+        }
+
+        const timezone = getUserTimezone(user);
+        const localHour = getLocalHour(timezone);
+        const timeLabel = getTimeLabel(localHour);
+
+        // Skip this user if it's not a notification window in their timezone
+        if (!timeLabel) {
+          usersSkipped++;
+          continue;
+        }
+
+        const isMidday = timeLabel === 'midday';
+        const isEvening = timeLabel === 'evening';
+        const today = getLocalDateString(timezone);
+
+        console.log(`[smart-reminder] User ${user.email} | TZ: ${timezone} | Local hour: ${localHour} | Window: ${timeLabel}`);
+
         // Get user's products with expiry dates
         const { data: homes, error: homesError } = await supabase
           .from('homes')
@@ -115,7 +132,7 @@ exports.handler = async (event, context) => {
           }
 
           // Use availability_status (persisted) with fallback to availability (legacy)
-            const status = p.availability_status || deriveStatusFromAvailability(p.availability || 'Yes');
+          const status = p.availability_status || deriveStatusFromAvailability(p.availability || 'Yes');
           if (status === 'out_of_stock') {
             outOfStock.push(p);
           } else if (status === 'low') {
@@ -133,7 +150,6 @@ exports.handler = async (event, context) => {
         if (expired.length > 0 || expiringSoon.length > 0) {
           // PRIORITY 1: Expiry alerts
           shouldSend = true;
-          const totalExpiry = expired.length + expiringSoon.length;
           
           if (expired.length > 0 && expiringSoon.length > 0) {
             title = '⚠️ Expiry Alert!';
@@ -183,10 +199,10 @@ exports.handler = async (event, context) => {
           } else {
             body = `Your pantry is well-stocked! Open the app to plan tonight's meal. 🧑‍🍳`;
           }
-        } else if (isMorning && allProducts.length > 0) {
-          // Morning: Quick status
+        } else if (isMidday && allProducts.length > 0) {
+          // Midday: Quick status summary
           shouldSend = true;
-          title = '📦 Good Morning!';
+          title = '📦 Stock Update';
           const issues = [];
           if (outOfStock.length > 0) issues.push(`${outOfStock.length} out of stock`);
           if (lowStock.length > 0) issues.push(`${lowStock.length} running low`);
@@ -225,10 +241,10 @@ exports.handler = async (event, context) => {
       }
     }
 
-    console.log(`[smart-reminder] Done! Sent ${notificationsSent} notifications.`);
+    console.log(`[smart-reminder] Done! Sent ${notificationsSent} notifications. Skipped ${usersSkipped} users (not in notification window).`);
     return {
       statusCode: 200,
-      body: JSON.stringify({ message: `Sent ${notificationsSent} smart reminders (${timeLabel}).` })
+      body: JSON.stringify({ message: `Sent ${notificationsSent} smart reminders. Skipped ${usersSkipped} users.` })
     };
 
   } catch (error) {

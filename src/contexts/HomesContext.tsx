@@ -2,6 +2,13 @@ import React, { createContext, useState, useEffect, useCallback, useContext, use
 import * as api from '../services/homeApi';
 import type { AvailabilityStatus, HomeItem, Product } from '../types';
 
+/** Capitalize the first letter of a string (e.g. "rice" → "Rice"). */
+function capitalizeFirst(str: string): string {
+  const trimmed = str.trim();
+  if (!trimmed) return trimmed;
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
 interface HomesContextValue {
   homes: HomeItem[];
   isLoading: boolean;
@@ -116,6 +123,11 @@ export function HomesProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addProduct = useCallback(async (homeId: number, initialData?: Partial<Omit<Product, 'id' | 'isExpired'>>) => {
+    // Auto-capitalize first letter of product name
+    if (initialData?.product) {
+      initialData = { ...initialData, product: capitalizeFirst(initialData.product) };
+    }
+
     // Check for duplicate product name in the same home
     const productName = (initialData?.product || '').trim().toLowerCase();
     if (productName) {
@@ -216,6 +228,11 @@ export function HomesProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateProduct = useCallback(async (homeId: number, productId: number, fields: Partial<Product>) => {
+    // Auto-capitalize first letter of product name
+    if (fields.product !== undefined) {
+      fields = { ...fields, product: capitalizeFirst(fields.product) };
+    }
+
     // Check for duplicate product name in the same home
     if (fields.product !== undefined && fields.product.trim()) {
       const home = homes.find(h => h.id === homeId);

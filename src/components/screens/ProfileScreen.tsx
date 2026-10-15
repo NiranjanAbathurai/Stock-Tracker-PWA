@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../config/supabase';
+import { getBrowserTimezone } from '../../services/authService';
 import MyHomes from '../profile/MyHomes';
 import ChangePassword from '../profile/ChangePassword';
 import NotificationToggle from '../profile/NotificationToggle';
+import TimezoneSelector from '../profile/TimezoneSelector';
 import HelpSupport from '../profile/HelpSupport';
 import LogoutButton from '../profile/LogoutButton';
 
@@ -13,6 +15,7 @@ interface ProfileScreenProps {
 const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout }) => {
   const [userName, setUserName] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
+  const [userTimezone, setUserTimezone] = useState<string>('');
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -21,6 +24,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout }) => {
         const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
         setUserName(name);
         setUserEmail(user.email || '');
+        setUserTimezone(user.user_metadata?.timezone || getBrowserTimezone());
       }
     };
     fetchUser();
@@ -93,6 +97,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout }) => {
         <MyHomes />
         <ChangePassword />
         <NotificationToggle />
+        <TimezoneSelector
+          currentTimezone={userTimezone}
+          onTimezoneChange={setUserTimezone}
+        />
         <HelpSupport />
       </div>
 

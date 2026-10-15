@@ -131,8 +131,11 @@ const ExpiryDatePicker: React.FC<ExpiryDatePickerProps> = ({ value, onChange, la
           style={{
             position: 'absolute',
             right: '36px',
-            top: '50%',
-            transform: 'translateY(25%)',
+            bottom: '0',
+            height: '42px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             background: 'none',
             border: 'none',
             color: 'var(--text-secondary)',
@@ -159,7 +162,7 @@ const ExpiryDatePicker: React.FC<ExpiryDatePickerProps> = ({ value, onChange, la
             }}
           />
 
-          {/* Picker Panel */}
+          {/* Picker Panel — sits above the fixed bottom nav + install banner */}
           <div
             style={{
               position: 'fixed',
@@ -169,9 +172,9 @@ const ExpiryDatePicker: React.FC<ExpiryDatePickerProps> = ({ value, onChange, la
               background: 'var(--bg-card)',
               borderRadius: '16px 16px 0 0',
               padding: '20px',
-              paddingBottom: '80px',
+              paddingBottom: '140px',
               zIndex: 1101,
-              maxHeight: '60vh',
+              maxHeight: '70vh',
               overflowY: 'auto',
               animation: 'slideUp 0.2s ease',
             }}
