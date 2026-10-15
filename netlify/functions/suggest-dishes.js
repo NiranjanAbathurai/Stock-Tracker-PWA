@@ -1,32 +1,19 @@
 // Netlify Serverless Function: suggest-dishes.js
 //
 // On-demand API endpoint for AI-powered dish suggestions.
-// Called by the frontend when:
-//   1. No cached suggestions exist in Supabase (first load)
-//   2. User manually refreshes suggestions
+// Uses the EXACT same Groq/Gemini calling pattern as text-command.js
 //
 // SECURITY: Requires authenticated user (JWT), rate-limited (10 req/hour)
-// AI PROVIDER CHAIN: Groq (free) → Gemini Primary → Gemini Fallback
-// Token usage: ~150 input + ~200 output = ~350 tokens per call
 
 try { require('dotenv').config(); } catch (e) {}
 
 const { verifyAuth, checkRateLimit, getOriginHeader, validatePayload } = require('./auth-helper');
 
-// ─── AI Provider Chain ───
+// ─── AI Provider Chain (same as text-command.js) ───
 function buildProviderChain() {
   const chain = [];
 
-  if (process.env.GROQ_API_KEY) {
-    chain.push({
-      provider: 'groq',
-      key: process.env.GROQ_API_KEY,
-      model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-      baseUrl: 'https://api.groq.com/openai/v1',
-      label: 'Groq',
-    });
-  }
-
+  // Gemini Primary (tried first — same order as text-command.js)
   if (process.env.GEMINI_API_KEY_PRIMARY) {
     chain.push({
       provider: 'gemini',
@@ -37,6 +24,18 @@ function buildProviderChain() {
     });
   }
 
+  // Groq (free tier)
+  if (process.env.GROQ_API_KEY) {
+    chain.push({
+      provider: 'groq',
+      key: process.env.GROQ_API_KEY,
+      model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+      baseUrl: 'https://api.groq.com/openai/v1',
+      label: 'Groq',
+    });
+  }
+
+  // Gemini Fallback
   if (process.env.GEMINI_API_KEY_FALLBACK) {
     chain.push({
       provider: 'gemini',
@@ -47,12 +46,51 @@ function buildProviderChain() {
     });
   }
 
+  // Legacy single Gemini key
+  if (process.env.GEMINI_API_KEY && !chain.some(c => c.key === process.env.GEMINI_API_KEY)) {
+    chain.push({
+      provider: 'gemini',
+      key: process.env.GEMINI_API_KEY,
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      baseUrl: process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
+      label: 'Gemini Legacy',
+    });
+  }
+
   return chain;
 }
 
 const PROVIDER_CHAIN = buildProviderChain();
 const PROVIDER_FALLBACK_STATUSES = [429, 403, 404, 500, 503, 529];
 
+// ─── System prompt for dish suggestions ───
+const DISH_SYSTEM_PROMPT = `You are a helpful cooking assistant. Given a list of available food ingredients, suggest 5-8 dishes.
+
+Rules:
+- Only suggest dishes primarily made with the listed ingredients
+- Mix of quick/easy and elaborate dishes
+- Prefer Indian cuisine but include others if ingredients match
+- For each dish, list which ingredients it uses
+- Rate ingredient match 0-100
+- Include a short cooking tip
+
+Respond with ONLY valid JSON:
+{"dishes":[{"name":"Dish Name","emoji":"🍛","category":"Breakfast|Main Course|Snack|Side Dish|Beverage|Dessert","ingredients_used":["item1","item2"],"match_score":85,"quick_tip":"Short tip"}]}`;
+
+// ─── Retry helper (same as text-command.js) ───
+async function fetchWithRetry(url, options, maxRetries = 1) {
+  const RETRYABLE = [429, 500, 503, 529];
+  let response;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    response = await fetch(url, options);
+    if (response.ok || !RETRYABLE.includes(response.status) || attempt === maxRetries) return response;
+    const delayMs = response.status === 429 ? 2000 * Math.pow(2, attempt) : 1000 * Math.pow(2, attempt);
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+  }
+  return response;
+}
+
+// ─── Groq model fallbacks (same as text-command.js) ───
 const GROQ_MODEL_FALLBACKS = [
   'llama-3.3-70b-versatile',
   'llama-3.3-70b-specdec',
@@ -60,103 +98,193 @@ const GROQ_MODEL_FALLBACKS = [
   'llama-3.1-8b-instant',
   'llama3-70b-8192',
   'llama3-8b-8192',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'meta-llama/llama-4-maverick-17b-128e-instruct',
+  'compound-beta',
+  'compound-beta-mini',
   'gemma2-9b-it',
   'mixtral-8x7b-32768',
 ];
 
-// ─── AI Prompt ───
-function buildPrompt(items) {
-  const hour = new Date().getHours();
-  const mealContext = hour < 11 ? 'Morning/Breakfast time' : hour < 16 ? 'Lunch time' : 'Evening/Dinner time';
-
-  return `You are a helpful cooking assistant. Based on the available ingredients below, suggest 5-8 dishes that can be made.
-
-## Available Ingredients:
-${items.join(', ')}
-
-## Meal Context: ${mealContext}
-
-## Rules:
-- Only suggest dishes that can be primarily made with the listed ingredients
-- Include a mix of quick/easy and more elaborate dishes
-- Prefer Indian cuisine but include other cuisines if ingredients match
-- For each dish, mention which available ingredients it uses
-- Rate how well the ingredients match (percentage)
-- Include a short, helpful cooking tip for each dish
-
-## Output (JSON only, no markdown fences):
-{
-  "dishes": [
-    {
-      "name": "Dish Name",
-      "emoji": "🍛",
-      "category": "Breakfast|Main Course|Snack|Side Dish|Beverage|Dessert",
-      "ingredients_used": ["item1", "item2"],
-      "match_score": 85,
-      "quick_tip": "Short cooking tip or note"
+// ─── Discover Groq models (same as text-command.js) ───
+async function discoverGroqModels(apiKey) {
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data && data.data && Array.isArray(data.data)) {
+      const chatModels = data.data
+        .filter(m => m.id && !m.id.includes('whisper') && !m.id.includes('tts') && !m.id.includes('guard'))
+        .map(m => m.id);
+      console.log(`[suggest-dishes] Groq available models: ${chatModels.join(', ')}`);
+      return chatModels.length > 0 ? chatModels : null;
     }
-  ]
-}`;
+    return null;
+  } catch (err) {
+    console.warn('[suggest-dishes] Failed to discover Groq models:', err.message);
+    return null;
+  }
 }
 
-// ─── Groq API Call ───
-async function callGroq(provider, prompt) {
-  const modelsToTry = [provider.model, ...GROQ_MODEL_FALLBACKS.filter(m => m !== provider.model)];
+// ─── Discover Gemini models (same as text-command.js) ───
+async function discoverGeminiModel(provider) {
+  try {
+    const response = await fetch(`${provider.baseUrl}/models?key=${provider.key}`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data && data.models && Array.isArray(data.models)) {
+      const models = data.models
+        .filter(m => m.name && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+        .map(m => m.name.replace('models/', ''));
+      const flashModel = models.find(m => m.includes('flash') && !m.includes('thinking'));
+      const proModel = models.find(m => m.includes('pro'));
+      const chosen = flashModel || proModel || models[0];
+      console.log(`[suggest-dishes] Gemini discovered models: ${models.slice(0, 8).join(', ')}... | Chosen: ${chosen}`);
+      return chosen || null;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[suggest-dishes] Failed to discover Gemini models:', err.message);
+    return null;
+  }
+}
 
-  for (const model of modelsToTry) {
-    try {
-      const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+// ─── Call Gemini (same pattern as text-command.js) ───
+async function callGemini(provider, userMessage) {
+  const requestBody = {
+    contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+    generationConfig: {
+      maxOutputTokens: 1024,
+      temperature: 0.7,
+      responseMimeType: 'application/json',
+    },
+    systemInstruction: { parts: [{ text: DISH_SYSTEM_PROMPT }] },
+  };
+
+  let modelToUse = provider.model;
+  let apiUrl = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
+
+  console.log(`[suggest-dishes] Trying ${provider.label} (${modelToUse})`);
+
+  let response = await fetchWithRetry(apiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  });
+
+  // If model not found, discover available models
+  if (!response.ok && response.status === 404) {
+    console.warn(`[suggest-dishes] Gemini model "${modelToUse}" not found. Discovering...`);
+    const discoveredModel = await discoverGeminiModel(provider);
+    if (discoveredModel && discoveredModel !== modelToUse) {
+      modelToUse = discoveredModel;
+      apiUrl = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
+      console.log(`[suggest-dishes] Retrying with discovered model: ${modelToUse}`);
+      response = await fetchWithRetry(apiUrl, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${provider.key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: 'You are a cooking assistant. Always respond with valid JSON only, no markdown.' },
-            { role: 'user', content: prompt },
-          ],
-          temperature: 0.7,
-          max_tokens: 1024,
-          response_format: { type: 'json_object' },
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
       });
-
-      if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) continue;
-      if (!response.ok) continue;
-
-      const data = await response.json();
-      return data.choices?.[0]?.message?.content || null;
-    } catch {
-      continue;
     }
   }
-  return null;
+
+  if (!response.ok) {
+    const errText = await response.text();
+    const errMsg = `Gemini ${response.status} (${modelToUse}): ${errText.substring(0, 200)}`;
+    console.warn(`[suggest-dishes] ${errMsg}`);
+    if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
+      const err = new Error(errMsg);
+      err.retryable = true;
+      throw err;
+    }
+    throw new Error(errMsg);
+  }
+
+  const data = await response.json();
+  const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (content) {
+    console.log(`[suggest-dishes] ${provider.label} succeeded (${content.length} chars)`);
+  }
+  return content || null;
 }
 
-// ─── Gemini API Call ───
-async function callGemini(provider, prompt) {
-  try {
-    const url = `${provider.baseUrl}/models/${provider.model}:generateContent?key=${provider.key}`;
-    const response = await fetch(url, {
+// ─── Call Groq (same pattern as text-command.js) ───
+async function callGroq(provider, userMessage) {
+  const messages = [
+    { role: 'system', content: DISH_SYSTEM_PROMPT },
+    { role: 'user', content: userMessage },
+  ];
+
+  const discoveredModels = await discoverGroqModels(provider.key);
+  const modelsToTry = discoveredModels
+    ? discoveredModels
+    : [provider.model, ...GROQ_MODEL_FALLBACKS.filter(m => m !== provider.model)];
+
+  for (const model of modelsToTry) {
+    console.log(`[suggest-dishes] Trying Groq model: ${model}`);
+    const response = await fetchWithRetry(`${provider.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${provider.key}`,
+      },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1024,
-          responseMimeType: 'application/json',
-        },
+        model,
+        messages,
+        max_tokens: 1024,
+        temperature: 0.7,
+        response_format: { type: 'json_object' },
       }),
     });
 
-    if (!response.ok) return null;
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`[suggest-dishes] Groq success with model: ${model}`);
+      return data.choices?.[0]?.message?.content || null;
+    }
 
-    const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
-  } catch {
+    const errText = await response.text();
+    if (response.status === 400 || response.status === 404) {
+      console.warn(`[suggest-dishes] Groq model "${model}" unavailable, trying next...`);
+      continue;
+    }
+
+    if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
+      const err = new Error(`Groq ${response.status}: ${errText.substring(0, 100)}`);
+      err.retryable = true;
+      throw err;
+    }
+
+    throw new Error(`Groq ${response.status}: ${errText.substring(0, 100)}`);
+  }
+
+  const err = new Error('All Groq models unavailable');
+  err.retryable = true;
+  throw err;
+}
+
+// ─── Parse AI response ───
+function parseAIResponse(rawContent) {
+  try {
+    const cleaned = rawContent.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+    if (parsed.dishes && Array.isArray(parsed.dishes) && parsed.dishes.length > 0) {
+      return parsed.dishes.map(d => ({
+        name: d.name || 'Unknown Dish',
+        emoji: d.emoji || '🍽️',
+        category: d.category || 'Main Course',
+        ingredients_used: Array.isArray(d.ingredients_used) ? d.ingredients_used : [],
+        match_score: typeof d.match_score === 'number' ? Math.min(100, Math.max(0, d.match_score)) : 50,
+        quick_tip: d.quick_tip || '',
+      }));
+    }
+    console.warn('[suggest-dishes] Parsed but no dishes:', JSON.stringify(parsed).substring(0, 200));
+    return null;
+  } catch (err) {
+    console.warn(`[suggest-dishes] JSON parse error: ${err.message}`);
+    console.warn(`[suggest-dishes] Raw: ${rawContent.substring(0, 300)}`);
     return null;
   }
 }
@@ -171,33 +299,24 @@ exports.handler = async (event) => {
     'Content-Type': 'application/json',
   };
 
-  // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: corsHeaders, body: '' };
   }
-
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, headers: corsHeaders, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  // Auth check
   const { user, error: authError } = await verifyAuth(event);
   if (authError) {
     return { statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: authError }) };
   }
 
-  // Rate limit: 10 dish suggestion requests per hour
   const { allowed, remaining } = checkRateLimit(user.id, 10, 60 * 60 * 1000);
   if (!allowed) {
-    return {
-      statusCode: 429,
-      headers: { ...corsHeaders, 'X-RateLimit-Remaining': '0' },
-      body: JSON.stringify({ error: 'Too many requests. Try again later.' }),
-    };
+    return { statusCode: 429, headers: corsHeaders, body: JSON.stringify({ error: 'Too many requests. Try again later.' }) };
   }
 
-  // Validate payload
-  const { valid, error: validError } = validatePayload(event, 50 * 1024); // 50KB max
+  const { valid, error: validError } = validatePayload(event, 50 * 1024);
   if (!valid) {
     return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: validError }) };
   }
@@ -207,95 +326,67 @@ exports.handler = async (event) => {
     const items = body.items;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
-      return {
-        statusCode: 400,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'Missing or empty "items" array.' }),
-      };
+      return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Missing or empty "items" array.' }) };
     }
 
-    // Cap at 50 items to prevent prompt injection / token abuse
-    const sanitizedItems = items
-      .slice(0, 50)
-      .map(i => String(i).trim().substring(0, 100))
-      .filter(Boolean);
-
+    const sanitizedItems = items.slice(0, 50).map(i => String(i).trim().substring(0, 100)).filter(Boolean);
     if (sanitizedItems.length === 0) {
-      return {
-        statusCode: 400,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'No valid items provided.' }),
-      };
+      return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'No valid items.' }) };
     }
 
     if (PROVIDER_CHAIN.length === 0) {
-      return {
-        statusCode: 503,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'No AI providers configured.' }),
-      };
+      console.error('[suggest-dishes] No AI providers! Check env vars.');
+      return { statusCode: 503, headers: corsHeaders, body: JSON.stringify({ error: 'No AI providers configured.' }) };
     }
 
-    // Call AI with provider chain
-    const prompt = buildPrompt(sanitizedItems);
-    let dishes = null;
-    let usedProvider = null;
+    console.log(`[suggest-dishes] User: ${user.email} | Items: ${sanitizedItems.join(', ')} | Providers: ${PROVIDER_CHAIN.map(p => p.label).join(' → ')}`);
 
-    for (const provider of PROVIDER_CHAIN) {
-      let rawContent = null;
+    const hour = new Date().getHours();
+    const mealContext = hour < 11 ? 'Morning/Breakfast' : hour < 16 ? 'Lunch' : 'Evening/Dinner';
+    const userMessage = `Available ingredients: ${sanitizedItems.join(', ')}\nMeal context: ${mealContext}\n\nSuggest dishes I can make.`;
 
-      if (provider.provider === 'groq') {
-        rawContent = await callGroq(provider, prompt);
-      } else if (provider.provider === 'gemini') {
-        rawContent = await callGemini(provider, prompt);
-      }
-
-      if (!rawContent) continue;
+    // Try each provider (same pattern as text-command.js)
+    for (let i = 0; i < PROVIDER_CHAIN.length; i++) {
+      const provider = PROVIDER_CHAIN[i];
+      const isLastProvider = (i === PROVIDER_CHAIN.length - 1);
 
       try {
-        const cleaned = rawContent.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-        const parsed = JSON.parse(cleaned);
+        let rawContent = null;
 
-        if (parsed.dishes && Array.isArray(parsed.dishes) && parsed.dishes.length > 0) {
-          dishes = parsed.dishes.map(d => ({
-            name: d.name || 'Unknown Dish',
-            emoji: d.emoji || '🍽️',
-            category: d.category || 'Main Course',
-            ingredients_used: Array.isArray(d.ingredients_used) ? d.ingredients_used : [],
-            match_score: typeof d.match_score === 'number' ? Math.min(100, Math.max(0, d.match_score)) : 50,
-            quick_tip: d.quick_tip || '',
-          }));
-          usedProvider = provider.label;
-          break;
+        if (provider.provider === 'gemini') {
+          rawContent = await callGemini(provider, userMessage);
+        } else if (provider.provider === 'groq') {
+          rawContent = await callGroq(provider, userMessage);
         }
-      } catch {
-        continue;
+
+        if (!rawContent) {
+          if (!isLastProvider) continue;
+          return { statusCode: 502, headers: corsHeaders, body: JSON.stringify({ error: 'AI returned empty response.' }) };
+        }
+
+        const dishes = parseAIResponse(rawContent);
+        if (dishes) {
+          return {
+            statusCode: 200,
+            headers: { ...corsHeaders, 'X-RateLimit-Remaining': String(remaining) },
+            body: JSON.stringify({ dishes, provider: provider.label, generated_at: new Date().toISOString() }),
+          };
+        }
+
+        // Parsed but no dishes — try next provider
+        if (!isLastProvider) continue;
+        return { statusCode: 502, headers: corsHeaders, body: JSON.stringify({ error: 'AI response could not be parsed.' }) };
+
+      } catch (providerError) {
+        console.warn(`[suggest-dishes] ${provider.label} failed:`, providerError.message);
+        if (!isLastProvider) continue;
+        return { statusCode: 502, headers: corsHeaders, body: JSON.stringify({ error: 'AI providers unavailable. Try again later.' }) };
       }
     }
 
-    if (!dishes) {
-      return {
-        statusCode: 502,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'AI providers unavailable. Try again later.' }),
-      };
-    }
-
-    return {
-      statusCode: 200,
-      headers: { ...corsHeaders, 'X-RateLimit-Remaining': String(remaining) },
-      body: JSON.stringify({
-        dishes,
-        provider: usedProvider,
-        generated_at: new Date().toISOString(),
-      }),
-    };
+    return { statusCode: 502, headers: corsHeaders, body: JSON.stringify({ error: 'All AI providers failed.' }) };
   } catch (err) {
     console.error('[suggest-dishes] Error:', err);
-    return {
-      statusCode: 500,
-      headers: corsHeaders,
-      body: JSON.stringify({ error: 'Internal server error.' }),
-    };
+    return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Internal server error.' }) };
   }
 };

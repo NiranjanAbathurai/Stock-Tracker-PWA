@@ -99,12 +99,15 @@ const VOICE_COMMAND_SYSTEM_PROMPT = `You are a smart voice assistant for a Stock
 7. Context-aware: "the oil expired" + only one oil → match it
 8. userTranscript MUST be the exact transcription of what user said
 
-## Expiry Date Rules:
-- If user says "today expiry" or "expires today" → set expiryDate to today's date (YYYY-MM-DD from Today field)
-- If user says "expires tomorrow" → calculate tomorrow's date
-- If user says "expires in 3 days" → calculate the date
-- If user says "expiry Oct 15" → convert to YYYY-MM-DD
-- If no expiry mentioned → set expiryDate to ""
+## Expiry Date Rules (IMPORTANT — always check for expiry keywords):
+- "expiry today" / "expires today" / "with expiry today" → expiryDate = the date from the "Today:" field in context
+- "expiry tomorrow" / "expires tomorrow" → expiryDate = today + 1 day
+- "expires in 3 days" / "expiry in 3 days" → expiryDate = today + 3 days
+- "expiry 2026-10-15" / "expiry Oct 15" / "exp 15th Oct" → convert to YYYY-MM-DD
+- "add milk with expiry today" → product="milk", expiryDate=today's date
+- "add rice expiry tomorrow" → product="rice", expiryDate=tomorrow's date
+- If NO expiry keyword found → expiryDate = ""
+- NEVER ignore expiry information when the user mentions it
 
 ## Output (JSON only, no markdown):
 {

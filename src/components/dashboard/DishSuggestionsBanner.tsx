@@ -22,14 +22,23 @@ interface CachedSuggestions {
 const CACHE_KEY = 'dish_suggestions_cache';
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
-// ─── Helpers ───
+// ─── Food Categories (exclude Cleaning, Personal Care, Medicine, Others) ───
+const FOOD_CATEGORIES = new Set([
+  'grocery', 'vegetables', 'fruits', 'dairy', 'snacks', 'beverages',
+  'spices', 'frozen', 'bakery', 'masalas', 'grains & rice', 'pulses & lentils',
+]);
 
-/** Create a simple hash of item names to detect inventory changes */
+function isFoodCategory(stockType: string): boolean {
+  if (!stockType) return true; // If no category, include it (might be food)
+  return FOOD_CATEGORIES.has(stockType.toLowerCase());
+}
+
+// ─── Cache Helpers ───
+
 function hashItems(items: string[]): string {
   return items.sort().join('|').toLowerCase();
 }
 
-/** Load cached suggestions from localStorage */
 function loadCache(): CachedSuggestions | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
@@ -45,13 +54,12 @@ function loadCache(): CachedSuggestions | null {
   }
 }
 
-/** Save suggestions to localStorage cache */
 function saveCache(dishes: DishSuggestion[], itemsHash: string): void {
   try {
     const data: CachedSuggestions = { dishes, itemsHash, timestamp: Date.now() };
     localStorage.setItem(CACHE_KEY, JSON.stringify(data));
   } catch {
-    // localStorage full or unavailable — ignore
+    // localStorage full or unavailable
   }
 }
 
@@ -67,11 +75,12 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
   const [isExpanded, setIsExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter to only available products
+  // Filter to only available FOOD products (exclude Cleaning, Personal Care, Medicine)
   const availableProducts = useMemo(
     () => products.filter(p => {
       if (p.availability === 'No') return false;
       if (p.availability_status === 'out_of_stock') return false;
+      if (!isFoodCategory(p.stockType)) return false;
       return true;
     }),
     [products]
@@ -99,14 +108,15 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
       }
     }
 
+    // Call AI API
     setIsLoading(true);
     setError(null);
 
     try {
-      // Get auth token
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
         setError('Not authenticated');
+        setIsLoading(false);
         return;
       }
 
@@ -121,22 +131,30 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
 
       if (response.status === 429) {
         setError('Rate limited — try again later');
+        setIsLoading(false);
         return;
       }
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        setError(errData.error || 'Failed to get suggestions');
+        console.warn('[DishSuggestions] API error:', response.status, errData);
+        setError(errData.error || `API error ${response.status}`);
+        setIsLoading(false);
         return;
       }
 
       const data = await response.json();
-      if (data.dishes && Array.isArray(data.dishes)) {
+      console.log('[DishSuggestions] AI response:', data);
+
+      if (data.dishes && Array.isArray(data.dishes) && data.dishes.length > 0) {
         setSuggestions(data.dishes);
         saveCache(data.dishes, currentHash);
+      } else {
+        setError('No dishes returned');
       }
     } catch (err) {
-      setError('Network error — check your connection');
+      console.warn('[DishSuggestions] Network error:', err);
+      setError('Network error');
     } finally {
       setIsLoading(false);
     }
@@ -147,7 +165,7 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
     fetchSuggestions();
   }, [fetchSuggestions]);
 
-  // Don't render if no items
+  // Don't render if no food items
   if (availableItems.length === 0) return null;
 
   // Loading state
@@ -180,16 +198,55 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
             🍳 Finding dishes you can cook...
           </div>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-            AI is analyzing your {availableItems.length} available items
+            AI is analyzing your {availableItems.length} food items
           </div>
         </div>
       </div>
     );
   }
 
-  // Error state (but still show cached suggestions if available)
+  // Error state
   if (error && suggestions.length === 0) {
-    return null; // Silently hide if no suggestions and error
+    return (
+      <div
+        style={{
+          background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(251, 191, 36, 0.08) 100%)',
+          borderRadius: '16px',
+          border: '1px solid rgba(239, 68, 68, 0.2)',
+          padding: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+          <div>
+            <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              Dish suggestions unavailable
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              {error}
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={() => fetchSuggestions(true)}
+          style={{
+            background: 'none',
+            border: '1px solid var(--border-color)',
+            borderRadius: '8px',
+            padding: '6px 12px',
+            fontSize: '0.75rem',
+            color: 'var(--text-primary)',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   if (suggestions.length === 0) return null;
@@ -235,7 +292,7 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
                 margin: '2px 0 0 0',
               }}
             >
-              AI suggestions from your {availableItems.length} items
+              AI suggestions from your {availableItems.length} food items
             </p>
           </div>
         </div>
@@ -251,10 +308,8 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
               fontSize: '1rem',
               padding: '4px',
               opacity: isLoading ? 0.5 : 1,
-              transition: 'transform 0.3s ease',
-              transform: isLoading ? 'rotate(360deg)' : 'none',
             }}
-            title="Refresh suggestions"
+            title="Refresh AI suggestions"
           >
             🔄
           </button>
@@ -285,7 +340,6 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
               padding: '10px 12px',
               borderRadius: '12px',
               background: 'var(--bg-card)',
-              transition: 'transform 0.15s ease',
             }}
           >
             {/* Emoji */}
@@ -395,7 +449,7 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
         </button>
       )}
 
-      {/* Subtle loading indicator when refreshing with existing data */}
+      {/* Subtle loading indicator when refreshing */}
       {isLoading && suggestions.length > 0 && (
         <div
           style={{
@@ -405,7 +459,7 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
             marginTop: '4px',
           }}
         >
-          Refreshing suggestions...
+          ✨ Refreshing AI suggestions...
         </div>
       )}
     </div>
