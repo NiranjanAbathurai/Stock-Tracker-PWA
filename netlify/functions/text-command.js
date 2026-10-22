@@ -10,6 +10,7 @@
 try { require('dotenv').config(); } catch (e) {}
 
 const { verifyAuth, checkRateLimit, getOriginHeader, validatePayload } = require('./auth-helper');
+const { getGroqModels, getGeminiModel, PROVIDER_FALLBACK_STATUSES } = require('./ai-models');
 
 // Build provider chain: Gemini keys + Groq key
 function buildProviderChain() {
@@ -63,8 +64,7 @@ function buildProviderChain() {
 }
 
 const PROVIDER_CHAIN = buildProviderChain();
-// Statuses that should trigger fallback to the next provider (not fatal)
-const PROVIDER_FALLBACK_STATUSES = [429, 403, 404, 500, 503, 529];
+// PROVIDER_FALLBACK_STATUSES imported from ai-models.js
 
 // Shorter system prompt for text commands (saves tokens!)
 const TEXT_COMMAND_SYSTEM_PROMPT = `You are a stock tracker assistant. Process the user's text command to manage their home inventory.
@@ -300,34 +300,7 @@ exports.handler = async (event) => {
 
 // ─── Provider-specific API callers ───
 
-/**
- * Discover available Gemini models dynamically.
- * Returns the first flash model found, or null.
- */
-async function discoverGeminiModel(provider) {
-  try {
-    const response = await fetch(`${provider.baseUrl}/models?key=${provider.key}`);
-    if (!response.ok) return null;
-    const data = await response.json();
-    if (data && data.models && Array.isArray(data.models)) {
-      // Prefer flash models (cheaper, faster), then pro
-      const models = data.models
-        .filter(m => m.name && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
-        .map(m => m.name.replace('models/', ''));
-      
-      const flashModel = models.find(m => m.includes('flash') && !m.includes('thinking'));
-      const proModel = models.find(m => m.includes('pro'));
-      const chosen = flashModel || proModel || models[0];
-      
-      console.log(`[text-command] Gemini discovered models: ${models.slice(0, 8).join(', ')}... | Chosen: ${chosen}`);
-      return chosen || null;
-    }
-    return null;
-  } catch (err) {
-    console.warn('[text-command] Failed to discover Gemini models:', err.message);
-    return null;
-  }
-}
+// Model discovery is handled by shared ai-models.js utility
 
 async function callGemini(provider, userMessage, conversationHistory) {
   const geminiContents = [];
@@ -366,7 +339,7 @@ async function callGemini(provider, userMessage, conversationHistory) {
   // If model is not found (404), try discovering available models
   if (!response.ok && response.status === 404) {
     console.warn(`[text-command] Gemini model "${modelToUse}" not found. Discovering available models...`);
-    const discoveredModel = await discoverGeminiModel(provider);
+    const discoveredModel = await getGeminiModel(provider);
     if (discoveredModel && discoveredModel !== modelToUse) {
       modelToUse = discoveredModel;
       apiUrl = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
@@ -394,43 +367,7 @@ async function callGemini(provider, userMessage, conversationHistory) {
   return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
 }
 
-// Groq model fallback list — if one is retired, try the next.
-// Updated 2026-10: Many older models decommissioned by Groq.
-const GROQ_MODEL_FALLBACKS = [
-  'meta-llama/llama-4-scout-17b-16e-instruct',
-  'meta-llama/llama-4-maverick-17b-128e-instruct',
-  'compound-beta',
-  'compound-beta-mini',
-  'llama-3.3-70b-versatile',
-  'llama-3.3-70b-specdec',
-  'llama-3.1-8b-instant',
-];
-
-/**
- * Discover available Groq models dynamically.
- * Falls back to the static list if the API call fails.
- */
-async function discoverGroqModels(apiKey) {
-  try {
-    const response = await fetch('https://api.groq.com/openai/v1/models', {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-    });
-    if (!response.ok) return null;
-    const data = await response.json();
-    if (data && data.data && Array.isArray(data.data)) {
-      // Filter for chat-capable models, prefer larger ones first
-      const chatModels = data.data
-        .filter(m => m.id && !m.id.includes('whisper') && !m.id.includes('tts') && !m.id.includes('guard'))
-        .map(m => m.id);
-      console.log(`[text-command] Groq available models: ${chatModels.join(', ')}`);
-      return chatModels.length > 0 ? chatModels : null;
-    }
-    return null;
-  } catch (err) {
-    console.warn('[text-command] Failed to discover Groq models:', err.message);
-    return null;
-  }
-}
+// Groq model discovery is handled by shared ai-models.js utility
 
 async function callGroq(provider, userMessage, conversationHistory) {
   // Groq uses OpenAI-compatible chat completions API
@@ -449,11 +386,8 @@ async function callGroq(provider, userMessage, conversationHistory) {
 
   messages.push({ role: 'user', content: userMessage });
 
-  // Try dynamic model discovery first, then fall back to static list
-  const discoveredModels = await discoverGroqModels(provider.key);
-  const modelsToTry = discoveredModels
-    ? discoveredModels
-    : [provider.model, ...GROQ_MODEL_FALLBACKS.filter(m => m !== provider.model)];
+  // Dynamic model discovery via shared ai-models.js utility
+  const modelsToTry = await getGroqModels(provider.key);
 
   for (const model of modelsToTry) {
     const response = await fetchWithRetry(`${provider.baseUrl}/chat/completions`, {

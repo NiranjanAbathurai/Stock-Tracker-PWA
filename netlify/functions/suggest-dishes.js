@@ -8,6 +8,7 @@
 try { require('dotenv').config(); } catch (e) {}
 
 const { verifyAuth, checkRateLimit, getOriginHeader, validatePayload } = require('./auth-helper');
+const { getGroqModels, getGeminiModel, PROVIDER_FALLBACK_STATUSES } = require('./ai-models');
 
 // ─── AI Provider Chain (same as text-command.js) ───
 function buildProviderChain() {
@@ -61,7 +62,6 @@ function buildProviderChain() {
 }
 
 const PROVIDER_CHAIN = buildProviderChain();
-const PROVIDER_FALLBACK_STATUSES = [429, 403, 404, 500, 503, 529];
 
 // ─── System prompt for dish suggestions ───
 const DISH_SYSTEM_PROMPT = `You are a helpful cooking assistant. Given a list of available food ingredients, suggest 5-8 dishes.
@@ -90,62 +90,7 @@ async function fetchWithRetry(url, options, maxRetries = 1) {
   return response;
 }
 
-// ─── Groq model fallbacks (same as text-command.js) ───
-// Updated 2026-10: Many older models decommissioned by Groq
-const GROQ_MODEL_FALLBACKS = [
-  'meta-llama/llama-4-scout-17b-16e-instruct',
-  'meta-llama/llama-4-maverick-17b-128e-instruct',
-  'compound-beta',
-  'compound-beta-mini',
-  'llama-3.3-70b-versatile',
-  'llama-3.3-70b-specdec',
-  'llama-3.1-8b-instant',
-];
-
-// ─── Discover Groq models (same as text-command.js) ───
-async function discoverGroqModels(apiKey) {
-  try {
-    const response = await fetch('https://api.groq.com/openai/v1/models', {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-    });
-    if (!response.ok) return null;
-    const data = await response.json();
-    if (data && data.data && Array.isArray(data.data)) {
-      const chatModels = data.data
-        .filter(m => m.id && !m.id.includes('whisper') && !m.id.includes('tts') && !m.id.includes('guard'))
-        .map(m => m.id);
-      console.log(`[suggest-dishes] Groq available models: ${chatModels.join(', ')}`);
-      return chatModels.length > 0 ? chatModels : null;
-    }
-    return null;
-  } catch (err) {
-    console.warn('[suggest-dishes] Failed to discover Groq models:', err.message);
-    return null;
-  }
-}
-
-// ─── Discover Gemini models (same as text-command.js) ───
-async function discoverGeminiModel(provider) {
-  try {
-    const response = await fetch(`${provider.baseUrl}/models?key=${provider.key}`);
-    if (!response.ok) return null;
-    const data = await response.json();
-    if (data && data.models && Array.isArray(data.models)) {
-      const models = data.models
-        .filter(m => m.name && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
-        .map(m => m.name.replace('models/', ''));
-      const flashModel = models.find(m => m.includes('flash') && !m.includes('thinking'));
-      const proModel = models.find(m => m.includes('pro'));
-      const chosen = flashModel || proModel || models[0];
-      console.log(`[suggest-dishes] Gemini discovered models: ${models.slice(0, 8).join(', ')}... | Chosen: ${chosen}`);
-      return chosen || null;
-    }
-    return null;
-  } catch (err) {
-    console.warn('[suggest-dishes] Failed to discover Gemini models:', err.message);
-    return null;
-  }
-}
+// Model discovery is handled by shared ai-models.js utility
 
 // ─── Call Gemini (same pattern as text-command.js) ───
 async function callGemini(provider, userMessage) {
@@ -173,7 +118,7 @@ async function callGemini(provider, userMessage) {
   // If model not found, discover available models
   if (!response.ok && response.status === 404) {
     console.warn(`[suggest-dishes] Gemini model "${modelToUse}" not found. Discovering...`);
-    const discoveredModel = await discoverGeminiModel(provider);
+    const discoveredModel = await getGeminiModel(provider);
     if (discoveredModel && discoveredModel !== modelToUse) {
       modelToUse = discoveredModel;
       apiUrl = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
@@ -213,10 +158,7 @@ async function callGroq(provider, userMessage) {
     { role: 'user', content: userMessage },
   ];
 
-  const discoveredModels = await discoverGroqModels(provider.key);
-  const modelsToTry = discoveredModels
-    ? discoveredModels
-    : [provider.model, ...GROQ_MODEL_FALLBACKS.filter(m => m !== provider.model)];
+  const modelsToTry = await getGroqModels(provider.key);
 
   for (const model of modelsToTry) {
     console.log(`[suggest-dishes] Trying Groq model: ${model}`);

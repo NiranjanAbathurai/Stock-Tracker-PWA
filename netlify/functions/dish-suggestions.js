@@ -17,6 +17,7 @@ try { require('dotenv').config(); } catch (e) {}
 const { createClient } = require('@supabase/supabase-js');
 const { deriveStatusFromAvailability } = require('./derive-status');
 const { getLocalHour, getUserTimezone } = require('./timezone-utils');
+const { getGroqModels, getGeminiModel, PROVIDER_FALLBACK_STATUSES } = require('./ai-models');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_SECRET_KEY = process.env.SUPABASE_SERVICE_SECRET_KEY;
@@ -62,44 +63,6 @@ function buildProviderChain() {
 }
 
 const PROVIDER_CHAIN = buildProviderChain();
-const PROVIDER_FALLBACK_STATUSES = [429, 403, 404, 500, 503, 529];
-
-// Groq model fallbacks (free-tier models rotate frequently)
-// Updated 2026-10: Many older models decommissioned by Groq
-const GROQ_MODEL_FALLBACKS = [
-  'meta-llama/llama-4-scout-17b-16e-instruct',
-  'meta-llama/llama-4-maverick-17b-128e-instruct',
-  'compound-beta',
-  'compound-beta-mini',
-  'llama-3.3-70b-versatile',
-  'llama-3.3-70b-specdec',
-  'llama-3.1-8b-instant',
-];
-
-/**
- * Discover available Groq models dynamically.
- * Falls back to the static list if the API call fails.
- */
-async function discoverGroqModels(apiKey) {
-  try {
-    const response = await fetch('https://api.groq.com/openai/v1/models', {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-    });
-    if (!response.ok) return null;
-    const data = await response.json();
-    if (data && data.data && Array.isArray(data.data)) {
-      const chatModels = data.data
-        .filter(m => m.id && !m.id.includes('whisper') && !m.id.includes('tts') && !m.id.includes('guard'))
-        .map(m => m.id);
-      console.log(`[dish-suggestions] Groq available models: ${chatModels.join(', ')}`);
-      return chatModels.length > 0 ? chatModels : null;
-    }
-    return null;
-  } catch (err) {
-    console.warn('[dish-suggestions] Failed to discover Groq models:', err.message);
-    return null;
-  }
-}
 
 // ─── AI Prompt ───
 function buildDishSuggestionPrompt(availableItems, mealType) {
@@ -132,13 +95,9 @@ ${availableItems.join(', ')}
 }`;
 }
 
-// ─── Groq API Call (with dynamic model discovery) ───
+// ─── Groq API Call (uses shared ai-models.js for dynamic discovery) ───
 async function callGroq(provider, prompt) {
-  // Try dynamic model discovery first, then fall back to static list
-  const discoveredModels = await discoverGroqModels(provider.key);
-  const modelsToTry = discoveredModels
-    ? discoveredModels
-    : [provider.model, ...GROQ_MODEL_FALLBACKS.filter(m => m !== provider.model)];
+  const modelsToTry = await getGroqModels(provider.key);
 
   for (const model of modelsToTry) {
     try {
@@ -191,33 +150,7 @@ async function callGroq(provider, prompt) {
   return null; // All Groq models failed
 }
 
-/**
- * Discover available Gemini models dynamically.
- * Returns the best chat-capable model or null.
- */
-async function discoverGeminiModel(provider) {
-  try {
-    const response = await fetch(`${provider.baseUrl}/models?key=${provider.key}`);
-    if (!response.ok) return null;
-    const data = await response.json();
-    if (data && data.models && Array.isArray(data.models)) {
-      const models = data.models
-        .filter(m => m.name && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
-        .map(m => m.name.replace('models/', ''));
-      const flashModel = models.find(m => m.includes('flash') && !m.includes('thinking'));
-      const proModel = models.find(m => m.includes('pro'));
-      const chosen = flashModel || proModel || models[0];
-      console.log(`[dish-suggestions] Gemini discovered models: ${models.slice(0, 8).join(', ')}... | Chosen: ${chosen}`);
-      return chosen || null;
-    }
-    return null;
-  } catch (err) {
-    console.warn('[dish-suggestions] Failed to discover Gemini models:', err.message);
-    return null;
-  }
-}
-
-// ─── Gemini API Call (with model discovery on 404) ───
+// ─── Gemini API Call (uses shared ai-models.js for discovery on 404) ───
 async function callGemini(provider, prompt) {
   try {
     const requestBody = {
@@ -243,7 +176,7 @@ async function callGemini(provider, prompt) {
     // If model not found, discover available models and retry
     if (!response.ok && response.status === 404) {
       console.warn(`[dish-suggestions] Gemini model "${modelToUse}" not found. Discovering...`);
-      const discoveredModel = await discoverGeminiModel(provider);
+      const discoveredModel = await getGeminiModel(provider);
       if (discoveredModel && discoveredModel !== modelToUse) {
         modelToUse = discoveredModel;
         url = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
