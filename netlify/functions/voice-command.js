@@ -21,7 +21,7 @@ function buildProviderChain() {
       provider: 'groq',
       key: process.env.GROQ_API_KEY,
       whisperModel: process.env.GROQ_WHISPER_MODEL || 'whisper-large-v3-turbo',
-      llmModel: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+      llmModel: process.env.GROQ_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct',
       baseUrl: 'https://api.groq.com/openai/v1',
       label: 'Groq (Whisper+LLM)'
     });
@@ -135,20 +135,15 @@ async function fetchWithRetry(url, options, maxRetries = 1) {
 // Statuses that should trigger fallback to the next provider (not fatal)
 const PROVIDER_FALLBACK_STATUSES = [429, 403, 404, 500, 503, 529];
 
-// Model fallback lists (updated 2026-09: Groq frequently rotates free-tier models)
+// Model fallback lists (updated 2026-10: Many older models decommissioned by Groq)
 const GROQ_LLM_FALLBACKS = [
-  'llama-3.3-70b-versatile',
-  'llama-3.3-70b-specdec',
-  'llama-3.1-70b-versatile',
-  'llama-3.1-8b-instant',
-  'llama3-70b-8192',
-  'llama3-8b-8192',
   'meta-llama/llama-4-scout-17b-16e-instruct',
   'meta-llama/llama-4-maverick-17b-128e-instruct',
   'compound-beta',
   'compound-beta-mini',
-  'gemma2-9b-it',
-  'mixtral-8x7b-32768',
+  'llama-3.3-70b-versatile',
+  'llama-3.3-70b-specdec',
+  'llama-3.1-8b-instant',
 ];
 const GROQ_WHISPER_FALLBACKS = ['whisper-large-v3-turbo', 'whisper-large-v3', 'distil-whisper-large-v3-en'];
 

@@ -30,7 +30,7 @@ function buildProviderChain() {
     chain.push({
       provider: 'groq',
       key: process.env.GROQ_API_KEY,
-      model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+      model: process.env.GROQ_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct',
       baseUrl: 'https://api.groq.com/openai/v1',
       label: 'Groq',
     });
@@ -65,16 +65,41 @@ const PROVIDER_CHAIN = buildProviderChain();
 const PROVIDER_FALLBACK_STATUSES = [429, 403, 404, 500, 503, 529];
 
 // Groq model fallbacks (free-tier models rotate frequently)
+// Updated 2026-10: Many older models decommissioned by Groq
 const GROQ_MODEL_FALLBACKS = [
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'meta-llama/llama-4-maverick-17b-128e-instruct',
+  'compound-beta',
+  'compound-beta-mini',
   'llama-3.3-70b-versatile',
   'llama-3.3-70b-specdec',
-  'llama-3.1-70b-versatile',
   'llama-3.1-8b-instant',
-  'llama3-70b-8192',
-  'llama3-8b-8192',
-  'gemma2-9b-it',
-  'mixtral-8x7b-32768',
 ];
+
+/**
+ * Discover available Groq models dynamically.
+ * Falls back to the static list if the API call fails.
+ */
+async function discoverGroqModels(apiKey) {
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data && data.data && Array.isArray(data.data)) {
+      const chatModels = data.data
+        .filter(m => m.id && !m.id.includes('whisper') && !m.id.includes('tts') && !m.id.includes('guard'))
+        .map(m => m.id);
+      console.log(`[dish-suggestions] Groq available models: ${chatModels.join(', ')}`);
+      return chatModels.length > 0 ? chatModels : null;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[dish-suggestions] Failed to discover Groq models:', err.message);
+    return null;
+  }
+}
 
 // ─── AI Prompt ───
 function buildDishSuggestionPrompt(availableItems, mealType) {
@@ -107,9 +132,13 @@ ${availableItems.join(', ')}
 }`;
 }
 
-// ─── Groq API Call ───
+// ─── Groq API Call (with dynamic model discovery) ───
 async function callGroq(provider, prompt) {
-  const modelsToTry = [provider.model, ...GROQ_MODEL_FALLBACKS.filter(m => m !== provider.model)];
+  // Try dynamic model discovery first, then fall back to static list
+  const discoveredModels = await discoverGroqModels(provider.key);
+  const modelsToTry = discoveredModels
+    ? discoveredModels
+    : [provider.model, ...GROQ_MODEL_FALLBACKS.filter(m => m !== provider.model)];
 
   for (const model of modelsToTry) {
     try {
@@ -131,23 +160,28 @@ async function callGroq(provider, prompt) {
         }),
       });
 
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) continue;
+        console.log(`[dish-suggestions] Groq ${model} succeeded`);
+        return content;
+      }
+
+      // Decommissioned (400) or not found (404) → try next model
+      if (response.status === 400 || response.status === 404) {
+        console.warn(`[dish-suggestions] Groq model "${model}" unavailable (${response.status}), trying next...`);
+        continue;
+      }
+
       if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
         console.warn(`[dish-suggestions] Groq model ${model} returned ${response.status}, trying next...`);
         continue;
       }
 
-      if (!response.ok) {
-        const errText = await response.text();
-        console.warn(`[dish-suggestions] Groq ${model} error: ${response.status} ${errText}`);
-        continue;
-      }
-
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) continue;
-
-      console.log(`[dish-suggestions] Groq ${model} succeeded`);
-      return content;
+      const errText = await response.text();
+      console.warn(`[dish-suggestions] Groq ${model} error: ${response.status} ${errText}`);
+      continue;
     } catch (err) {
       console.warn(`[dish-suggestions] Groq ${model} exception: ${err.message}`);
       continue;
@@ -157,22 +191,70 @@ async function callGroq(provider, prompt) {
   return null; // All Groq models failed
 }
 
-// ─── Gemini API Call ───
+/**
+ * Discover available Gemini models dynamically.
+ * Returns the best chat-capable model or null.
+ */
+async function discoverGeminiModel(provider) {
+  try {
+    const response = await fetch(`${provider.baseUrl}/models?key=${provider.key}`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data && data.models && Array.isArray(data.models)) {
+      const models = data.models
+        .filter(m => m.name && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+        .map(m => m.name.replace('models/', ''));
+      const flashModel = models.find(m => m.includes('flash') && !m.includes('thinking'));
+      const proModel = models.find(m => m.includes('pro'));
+      const chosen = flashModel || proModel || models[0];
+      console.log(`[dish-suggestions] Gemini discovered models: ${models.slice(0, 8).join(', ')}... | Chosen: ${chosen}`);
+      return chosen || null;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[dish-suggestions] Failed to discover Gemini models:', err.message);
+    return null;
+  }
+}
+
+// ─── Gemini API Call (with model discovery on 404) ───
 async function callGemini(provider, prompt) {
   try {
-    const url = `${provider.baseUrl}/models/${provider.model}:generateContent?key=${provider.key}`;
-    const response = await fetch(url, {
+    const requestBody = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 1024,
+        responseMimeType: 'application/json',
+      },
+    };
+
+    let modelToUse = provider.model;
+    let url = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
+
+    console.log(`[dish-suggestions] Trying ${provider.label} (${modelToUse})`);
+
+    let response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1024,
-          responseMimeType: 'application/json',
-        },
-      }),
+      body: JSON.stringify(requestBody),
     });
+
+    // If model not found, discover available models and retry
+    if (!response.ok && response.status === 404) {
+      console.warn(`[dish-suggestions] Gemini model "${modelToUse}" not found. Discovering...`);
+      const discoveredModel = await discoverGeminiModel(provider);
+      if (discoveredModel && discoveredModel !== modelToUse) {
+        modelToUse = discoveredModel;
+        url = `${provider.baseUrl}/models/${modelToUse}:generateContent?key=${provider.key}`;
+        console.log(`[dish-suggestions] Retrying with discovered model: ${modelToUse}`);
+        response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        });
+      }
+    }
 
     if (PROVIDER_FALLBACK_STATUSES.includes(response.status)) {
       console.warn(`[dish-suggestions] ${provider.label} returned ${response.status}`);
@@ -189,7 +271,7 @@ async function callGemini(provider, prompt) {
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!content) return null;
 
-    console.log(`[dish-suggestions] ${provider.label} succeeded`);
+    console.log(`[dish-suggestions] ${provider.label} succeeded (${modelToUse})`);
     return content;
   } catch (err) {
     console.warn(`[dish-suggestions] ${provider.label} exception: ${err.message}`);

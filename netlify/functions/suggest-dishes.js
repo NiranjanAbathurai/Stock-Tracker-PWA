@@ -29,7 +29,7 @@ function buildProviderChain() {
     chain.push({
       provider: 'groq',
       key: process.env.GROQ_API_KEY,
-      model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+      model: process.env.GROQ_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct',
       baseUrl: 'https://api.groq.com/openai/v1',
       label: 'Groq',
     });
@@ -91,19 +91,15 @@ async function fetchWithRetry(url, options, maxRetries = 1) {
 }
 
 // ─── Groq model fallbacks (same as text-command.js) ───
+// Updated 2026-10: Many older models decommissioned by Groq
 const GROQ_MODEL_FALLBACKS = [
-  'llama-3.3-70b-versatile',
-  'llama-3.3-70b-specdec',
-  'llama-3.1-70b-versatile',
-  'llama-3.1-8b-instant',
-  'llama3-70b-8192',
-  'llama3-8b-8192',
   'meta-llama/llama-4-scout-17b-16e-instruct',
   'meta-llama/llama-4-maverick-17b-128e-instruct',
   'compound-beta',
   'compound-beta-mini',
-  'gemma2-9b-it',
-  'mixtral-8x7b-32768',
+  'llama-3.3-70b-versatile',
+  'llama-3.3-70b-specdec',
+  'llama-3.1-8b-instant',
 ];
 
 // ─── Discover Groq models (same as text-command.js) ───
