@@ -76,7 +76,7 @@ export default defineConfig({
         clientsClaim: true,
         // SPA fallback: serve precached index.html for all navigation requests
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/.netlify/, /^\/api/],
+        navigateFallbackDenylist: [/^\/.netlify/, /^\/api/, /^\/.well-known/],
         runtimeCaching: [
           {
             // SECURITY: Auth endpoints should never be cached

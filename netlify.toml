@@ -1,5 +1,5 @@
 [build]
-  command = "cd netlify/functions && npm install && cd ../.. && node scripts/bump-version.js && node scripts/generate-icons.js && npm run build"
+  command = "cd netlify/functions && npm install && cd ../.. && node scripts/bump-version.js && node scripts/generate-icons.js && npm run build && cp -r public/.well-known dist/.well-known"
   publish = "dist"
   functions = "netlify/functions"
 
@@ -46,7 +46,6 @@
   status = 200
 
 # SPA fallback — must come AFTER specific redirects
-
 [[redirects]]
   from = "/*"
   to = "/index.html"
