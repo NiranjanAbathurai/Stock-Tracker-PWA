@@ -32,6 +32,21 @@
     Content-Type = "application/manifest+json"
     Cache-Control = "no-cache"
 
+# Android Digital Asset Links — must be served as JSON
+[[headers]]
+  for = "/.well-known/assetlinks.json"
+  [headers.values]
+    Content-Type = "application/json"
+    Cache-Control = "no-cache"
+
+# Serve .well-known files directly (needed for Android Digital Asset Links)
+[[redirects]]
+  from = "/.well-known/*"
+  to = "/.well-known/:splat"
+  status = 200
+
+# SPA fallback — must come AFTER specific redirects
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
