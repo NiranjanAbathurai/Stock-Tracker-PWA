@@ -137,8 +137,17 @@ async function getGeminiModel(provider) {
       )
       .map(m => m.name.replace('models/', ''));
 
-    // Prefer: flash (non-thinking) → pro → first available
-    const flashModel = models.find(m => m.includes('flash') && !m.includes('thinking'));
+    // Prefer: newest flash (non-thinking) → pro → first available
+    // Sort flash models by version number descending so we pick the newest
+    const flashModels = models
+      .filter(m => m.includes('flash') && !m.includes('thinking'))
+      .sort((a, b) => {
+        // Extract version numbers (e.g. "gemini-3.8-flash" → 3.8, "gemini-2.5-flash" → 2.5)
+        const vA = parseFloat((a.match(/(\d+\.?\d*)-flash/) || [])[1]) || 0;
+        const vB = parseFloat((b.match(/(\d+\.?\d*)-flash/) || [])[1]) || 0;
+        return vB - vA; // Descending — newest first
+      });
+    const flashModel = flashModels[0] || null;
     const proModel = models.find(m => m.includes('pro'));
     const chosen = flashModel || proModel || models[0] || null;
 

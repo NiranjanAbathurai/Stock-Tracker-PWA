@@ -33,7 +33,7 @@ function buildProviderChain() {
     chain.push({
       provider: 'gemini',
       key: process.env.GEMINI_API_KEY_PRIMARY,
-      model: process.env.GEMINI_MODEL_PRIMARY || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL_PRIMARY || process.env.GEMINI_MODEL || 'gemini-3.8-flash',
       baseUrl: process.env.GEMINI_BASE_URL_PRIMARY || 'https://generativelanguage.googleapis.com/v1beta',
       label: 'Gemini Primary'
     });
@@ -44,7 +44,7 @@ function buildProviderChain() {
     chain.push({
       provider: 'gemini',
       key: process.env.GEMINI_API_KEY_FALLBACK,
-      model: process.env.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL_FALLBACK || 'gemini-3.8-flash',
       baseUrl: process.env.GEMINI_BASE_URL_FALLBACK || 'https://generativelanguage.googleapis.com/v1beta',
       label: 'Gemini Fallback'
     });
@@ -56,7 +56,7 @@ function buildProviderChain() {
     chain.push({
       provider: 'gemini',
       key: process.env.GEMINI_API_KEY,
-      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
       baseUrl: process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
       label: 'Gemini Legacy'
     });
