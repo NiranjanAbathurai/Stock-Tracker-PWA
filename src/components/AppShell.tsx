@@ -97,6 +97,7 @@ const AppShell: React.FC<AppShellProps> = ({ onLogout }) => {
         activeTab={activeTab}
         onHamburgerClick={() => setDrawerOpen(true)}
         onRightIconClick={handleBellClick}
+        notificationsOn={isSubscribed}
       />
 
       {/* Side Drawer */}

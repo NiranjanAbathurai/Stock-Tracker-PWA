@@ -292,7 +292,11 @@ function getMealLabel(localHour) {
 }
 
 exports.handler = async (event, context) => {
-  console.log('[dish-suggestions] Running AI dish suggestion cron...');
+  // Support ?force=true to bypass time check (for manual testing)
+  const params = event.queryStringParameters || {};
+  const forceRun = params.force === 'true';
+
+  console.log(`[dish-suggestions] Running AI dish suggestion cron...${forceRun ? ' (FORCE MODE)' : ''}`);
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_SECRET_KEY) {
     console.error('[dish-suggestions] Missing Supabase env vars.');
@@ -352,14 +356,14 @@ exports.handler = async (event, context) => {
         const timezone = getUserTimezone(user);
         const localHour = getLocalHour(timezone);
 
-        console.log(`[dish-suggestions] User ${user.email} | TZ: ${timezone} | Local hour: ${localHour} | isDishTime: ${isDishSuggestionTime(localHour)}`);
+        console.log(`[dish-suggestions] User ${user.email} | TZ: ${timezone} | Local hour: ${localHour} | isDishTime: ${isDishSuggestionTime(localHour)} | force: ${forceRun}`);
 
-        if (!isDishSuggestionTime(localHour)) {
+        if (!forceRun && !isDishSuggestionTime(localHour)) {
           usersSkipped++;
           continue;
         }
 
-        const mealLabel = getMealLabel(localHour);
+        const mealLabel = forceRun ? (localHour < 12 ? 'breakfast' : 'dinner') : getMealLabel(localHour);
         console.log(`[dish-suggestions] Processing ${user.email} for ${mealLabel} suggestions...`);
 
         // Get user's available products

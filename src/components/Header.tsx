@@ -5,9 +5,11 @@ interface HeaderProps {
   activeTab: Tab;
   onHamburgerClick: () => void;
   onRightIconClick?: () => void;
+  /** Whether push notifications are currently subscribed */
+  notificationsOn?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ activeTab, onHamburgerClick, onRightIconClick }) => {
+const Header: React.FC<HeaderProps> = ({ activeTab, onHamburgerClick, onRightIconClick, notificationsOn }) => {
   const getTitle = (): string => {
     switch (activeTab) {
       case 'dashboard': return 'Dashboard';
@@ -17,11 +19,21 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onHamburgerClick, onRightIco
   };
 
   const getRightIcon = () => {
-    // Bell icon on all pages
+    if (notificationsOn) {
+      // Bell ON — filled green bell
+      return (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="var(--accent-green)" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </svg>
+      );
+    }
+    // Bell OFF — outline with slash
     return (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
         <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        <line x1="1" y1="1" x2="23" y2="23" />
       </svg>
     );
   };

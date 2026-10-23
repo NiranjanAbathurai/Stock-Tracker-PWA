@@ -281,7 +281,7 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
             position: 'fixed',
             top: 0, left: 0, right: 0, bottom: 0,
             background: 'rgba(0,0,0,0.6)',
-            zIndex: 999,
+            zIndex: 1001,
           }}
         />
         {/* Popup */}
@@ -291,9 +291,9 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
             bottom: 0, left: 0, right: 0,
             background: 'var(--bg-primary)',
             borderRadius: '20px 20px 0 0',
-            padding: '24px 20px 32px',
-            zIndex: 1000,
-            maxHeight: '70vh',
+            padding: '24px 20px calc(80px + env(safe-area-inset-bottom, 0px))',
+            zIndex: 1002,
+            maxHeight: '85vh',
             overflowY: 'auto',
             animation: 'slideUp 0.3s ease',
           }}
