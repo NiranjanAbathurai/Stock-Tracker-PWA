@@ -2,7 +2,7 @@
 //
 // Uses AI (Groq/Gemini) to suggest dishes based on each user's available
 // inventory items. Stores results in the `dish_suggestions` Supabase table
-// so the frontend can display them instantly without an API call.
+// AND sends a push notification so the user knows new suggestions are ready.
 //
 // TIMEZONE-AWARE: Runs every hour. For each user, checks their IANA timezone
 // and only processes if it's 7:00 AM or 5:00 PM local time (meal planning times).
@@ -15,12 +15,18 @@
 try { require('dotenv').config(); } catch (e) {}
 
 const { createClient } = require('@supabase/supabase-js');
+const webpush = require('web-push');
 const { deriveStatusFromAvailability } = require('./derive-status');
 const { getLocalHour, getUserTimezone } = require('./timezone-utils');
 const { getGroqModels, getGeminiModel, PROVIDER_FALLBACK_STATUSES } = require('./ai-models');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_SECRET_KEY = process.env.SUPABASE_SERVICE_SECRET_KEY;
+
+// VAPID config for Web Push (same keys as expiry-notification.js)
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:admin@stocktracker.app';
 
 // ─── AI Provider Chain (same pattern as text-command.js) ───
 function buildProviderChain() {
@@ -79,6 +85,10 @@ ${availableItems.join(', ')}
 - Prefer Indian cuisine but include other cuisines if ingredients match
 - For each dish, mention which available ingredients it uses
 - Rate how well the ingredients match (percentage)
+- Include a short 1-line cooking tip
+- Include detailed step-by-step cooking instructions (4-8 clear numbered steps)
+- Each step should be concise but actionable (e.g. "Heat oil in a pan, add mustard seeds and let them splutter")
+- Include prep time estimate
 
 ## Output (JSON only, no markdown fences):
 {
@@ -89,7 +99,9 @@ ${availableItems.join(', ')}
       "category": "Breakfast|Main Course|Snack|Side Dish|Beverage|Dessert",
       "ingredients_used": ["item1", "item2"],
       "match_score": 85,
-      "quick_tip": "Short cooking tip or note"
+      "quick_tip": "Short 1-line summary",
+      "prep_time": "15 mins",
+      "steps": ["Step 1: Do this", "Step 2: Do that", "Step 3: Then this"]
     }
   ]
 }`;
@@ -114,7 +126,7 @@ async function callGroq(provider, prompt) {
             { role: 'user', content: prompt },
           ],
           temperature: 0.7,
-          max_tokens: 1024,
+          max_tokens: 2048,
           response_format: { type: 'json_object' },
         }),
       });
@@ -157,7 +169,7 @@ async function callGemini(provider, prompt) {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.7,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048,
         responseMimeType: 'application/json',
       },
     };
@@ -242,6 +254,8 @@ async function getAIDishSuggestions(availableItems, mealType) {
             ingredients_used: d.ingredients_used || [],
             match_score: typeof d.match_score === 'number' ? d.match_score : 50,
             quick_tip: d.quick_tip || '',
+            prep_time: d.prep_time || '',
+            steps: Array.isArray(d.steps) ? d.steps : [],
           })),
           provider: provider.label,
         };
@@ -259,8 +273,13 @@ async function getAIDishSuggestions(availableItems, mealType) {
 /**
  * Determine if it's a dish suggestion window for the user.
  * We suggest dishes at:
- *   7:00 AM local  → breakfast/morning planning
- *   5:00 PM local  → dinner planning
+ *   7:00–7:59 AM local  → breakfast/morning planning
+ *   5:00–5:59 PM local  → dinner planning
+ *
+ * NOTE: The cron runs at :15 past every UTC hour. For half-hour offset
+ * timezones (e.g. IST = UTC+5:30), the local time when the cron fires
+ * is :45 past the local hour. So we match the full hour window (7 or 17)
+ * to ensure users in all timezones are covered.
  */
 function isDishSuggestionTime(localHour) {
   return localHour === 7 || localHour === 17;
@@ -285,6 +304,20 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, body: JSON.stringify({ message: 'No AI providers configured.' }) };
   }
 
+  // Configure web-push if VAPID keys are available
+  let pushEnabled = false;
+  if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && VAPID_SUBJECT) {
+    try {
+      webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+      pushEnabled = true;
+      console.log('[dish-suggestions] Push notifications enabled.');
+    } catch (vapidError) {
+      console.warn('[dish-suggestions] Failed to configure VAPID — push disabled:', vapidError.message);
+    }
+  } else {
+    console.log('[dish-suggestions] Push notifications disabled (missing VAPID keys).');
+  }
+
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_SECRET_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -305,6 +338,7 @@ exports.handler = async (event, context) => {
     const userIds = [...new Set(homeRows.map(h => h.user_id))];
     let usersProcessed = 0;
     let usersSkipped = 0;
+    let pushSent = 0;
 
     for (const userId of userIds) {
       try {
@@ -318,13 +352,15 @@ exports.handler = async (event, context) => {
         const timezone = getUserTimezone(user);
         const localHour = getLocalHour(timezone);
 
+        console.log(`[dish-suggestions] User ${user.email} | TZ: ${timezone} | Local hour: ${localHour} | isDishTime: ${isDishSuggestionTime(localHour)}`);
+
         if (!isDishSuggestionTime(localHour)) {
           usersSkipped++;
           continue;
         }
 
         const mealLabel = getMealLabel(localHour);
-        console.log(`[dish-suggestions] User ${user.email} | TZ: ${timezone} | Local hour: ${localHour} | Meal: ${mealLabel}`);
+        console.log(`[dish-suggestions] Processing ${user.email} for ${mealLabel} suggestions...`);
 
         // Get user's available products
         const { data: homes, error: homesError } = await supabase
@@ -344,7 +380,10 @@ exports.handler = async (event, context) => {
           return status !== 'out_of_stock';
         });
 
-        if (availableProducts.length === 0) continue;
+        if (availableProducts.length === 0) {
+          console.log(`[dish-suggestions] User ${user.email} has no available products, skipping.`);
+          continue;
+        }
 
         const availableItems = availableProducts.map(p => p.product);
 
@@ -377,15 +416,70 @@ exports.handler = async (event, context) => {
           usersProcessed++;
           console.log(`[dish-suggestions] Stored ${result.dishes.length} AI suggestions for user ${userId} via ${result.provider}`);
         }
+
+        // ─── Send Push Notification ───
+        if (pushEnabled) {
+          try {
+            const { data: subscriptions, error: subError } = await supabase
+              .from('push_subscriptions')
+              .select('id, endpoint, p256dh, auth')
+              .eq('user_id', userId);
+
+            if (subError) {
+              console.warn(`[dish-suggestions] Failed to fetch push subs for ${userId}: ${subError.message}`);
+            } else if (subscriptions && subscriptions.length > 0) {
+              // Pick top dish for the notification body
+              const topDish = result.dishes[0];
+              const dishCount = result.dishes.length;
+              const mealEmoji = mealLabel === 'breakfast' ? '🌅' : '🌆';
+              const pushBody = dishCount === 1
+                ? `${topDish.emoji} Try making ${topDish.name}!`
+                : `${topDish.emoji} ${topDish.name} and ${dishCount - 1} more ${mealLabel} ideas!`;
+
+              const pushPayload = JSON.stringify({
+                title: `${mealEmoji} ${mealLabel === 'breakfast' ? 'Breakfast' : 'Dinner'} Ideas Ready!`,
+                body: pushBody,
+                icon: '/icons/icon-192x192.png',
+                url: '/',
+              });
+
+              for (const sub of subscriptions) {
+                const pushSubscription = {
+                  endpoint: sub.endpoint,
+                  keys: { p256dh: sub.p256dh, auth: sub.auth },
+                };
+
+                try {
+                  await webpush.sendNotification(pushSubscription, pushPayload);
+                  pushSent++;
+                  console.log(`[dish-suggestions] Push sent to sub ${sub.id} for user ${userId}`);
+                } catch (pushError) {
+                  const code = pushError.statusCode;
+                  if (code === 400 || code === 401 || code === 403 || code === 404 || code === 410) {
+                    // Subscription is invalid/expired — clean it up
+                    console.log(`[dish-suggestions] Removing invalid push sub ${sub.id} (HTTP ${code})`);
+                    await supabase.from('push_subscriptions').delete().eq('id', sub.id);
+                  } else {
+                    console.warn(`[dish-suggestions] Push failed for sub ${sub.id} (HTTP ${code}):`, pushError.message);
+                  }
+                }
+              }
+            } else {
+              console.log(`[dish-suggestions] No push subscriptions for user ${userId}`);
+            }
+          } catch (pushErr) {
+            console.warn(`[dish-suggestions] Push error for user ${userId}:`, pushErr.message);
+          }
+        }
       } catch (userError) {
         console.error(`[dish-suggestions] Error processing user ${userId}:`, userError.message);
       }
     }
 
-    console.log(`[dish-suggestions] Done! Processed ${usersProcessed} users. Skipped ${usersSkipped} users.`);
+    console.log(`[dish-suggestions] Done! Processed ${usersProcessed} users. Push sent: ${pushSent}. Skipped ${usersSkipped} users.`);
     return {
       statusCode: 200,
-      body: JSON.stringify({ message: `Processed ${usersProcessed} users. Skipped ${usersSkipped}.` }),
+      body: JSON.stringify({ message: `Processed ${usersProcessed} users. Push: ${pushSent}. Skipped ${usersSkipped}.` }),
     };
   } catch (error) {
     console.error('[dish-suggestions] Fatal error:', error);

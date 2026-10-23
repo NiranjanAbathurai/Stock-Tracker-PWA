@@ -72,10 +72,13 @@ Rules:
 - Prefer Indian cuisine but include others if ingredients match
 - For each dish, list which ingredients it uses
 - Rate ingredient match 0-100
-- Include a short cooking tip
+- Include a short cooking tip (1 line summary)
+- Include detailed step-by-step cooking instructions (4-8 clear numbered steps)
+- Each step should be concise but actionable (e.g. "Heat oil in a pan, add mustard seeds and let them splutter")
+- Include prep time estimate
 
 Respond with ONLY valid JSON:
-{"dishes":[{"name":"Dish Name","emoji":"🍛","category":"Breakfast|Main Course|Snack|Side Dish|Beverage|Dessert","ingredients_used":["item1","item2"],"match_score":85,"quick_tip":"Short tip"}]}`;
+{"dishes":[{"name":"Dish Name","emoji":"🍛","category":"Breakfast|Main Course|Snack|Side Dish|Beverage|Dessert","ingredients_used":["item1","item2"],"match_score":85,"quick_tip":"Short 1-line summary","prep_time":"15 mins","steps":["Step 1: Do this","Step 2: Do that","Step 3: Then this"]}]}`;
 
 // ─── Retry helper (same as text-command.js) ───
 async function fetchWithRetry(url, options, maxRetries = 1) {
@@ -97,7 +100,7 @@ async function callGemini(provider, userMessage) {
   const requestBody = {
     contents: [{ role: 'user', parts: [{ text: userMessage }] }],
     generationConfig: {
-      maxOutputTokens: 1024,
+      maxOutputTokens: 2048,
       temperature: 0.7,
       responseMimeType: 'application/json',
     },
@@ -171,7 +174,7 @@ async function callGroq(provider, userMessage) {
       body: JSON.stringify({
         model,
         messages,
-        max_tokens: 1024,
+        max_tokens: 2048,
         temperature: 0.7,
         response_format: { type: 'json_object' },
       }),
@@ -216,6 +219,8 @@ function parseAIResponse(rawContent) {
         ingredients_used: Array.isArray(d.ingredients_used) ? d.ingredients_used : [],
         match_score: typeof d.match_score === 'number' ? Math.min(100, Math.max(0, d.match_score)) : 50,
         quick_tip: d.quick_tip || '',
+        prep_time: d.prep_time || '',
+        steps: Array.isArray(d.steps) ? d.steps : [],
       }));
     }
     console.warn('[suggest-dishes] Parsed but no dishes:', JSON.stringify(parsed).substring(0, 200));

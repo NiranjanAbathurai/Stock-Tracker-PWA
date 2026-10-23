@@ -11,6 +11,8 @@ interface DishSuggestion {
   ingredients_used: string[];
   match_score: number;
   quick_tip: string;
+  prep_time?: string;
+  steps?: string[];
 }
 
 interface CachedSuggestions {
@@ -19,7 +21,7 @@ interface CachedSuggestions {
   timestamp: number;
 }
 
-const CACHE_KEY = 'dish_suggestions_cache';
+const CACHE_KEY = 'dish_suggestions_cache_v2';
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000;
 
 // ─── Food Categories ───
@@ -338,19 +340,74 @@ const DishSuggestionsBanner: React.FC<DishSuggestionsBannerProps> = ({ products 
             </div>
           </div>
 
-          {/* Cooking Tip */}
-          {selectedDish.quick_tip && (
-            <div
-              style={{
-                background: 'var(--bg-card)', borderRadius: '12px', padding: '14px',
-                marginBottom: '14px',
-              }}
-            >
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-green)', marginBottom: '6px' }}>
-                💡 Cooking Tip
+          {/* Prep Time + Quick Tip */}
+          <div
+            style={{
+              background: 'var(--bg-card)', borderRadius: '12px', padding: '14px',
+              marginBottom: '14px',
+              display: 'flex', flexDirection: 'column', gap: '8px',
+            }}
+          >
+            {selectedDish.prep_time && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '0.85rem' }}>⏱️</span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--accent-green)' }}>
+                  {selectedDish.prep_time}
+                </span>
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                {selectedDish.quick_tip}
+            )}
+            {selectedDish.quick_tip && (
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                💡 {selectedDish.quick_tip}
+              </div>
+            )}
+          </div>
+
+          {/* Step-by-Step Cooking Instructions */}
+          {selectedDish.steps && selectedDish.steps.length > 0 && (
+            <div style={{ marginBottom: '14px' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '10px' }}>
+                👨‍🍳 How to Cook
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {selectedDish.steps.map((step, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: 'flex',
+                      gap: '12px',
+                      alignItems: 'flex-start',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '26px',
+                        height: '26px',
+                        borderRadius: '50%',
+                        background: 'rgba(34, 197, 94, 0.15)',
+                        color: 'var(--accent-green)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {i + 1}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '0.82rem',
+                        color: 'var(--text-primary)',
+                        lineHeight: 1.55,
+                        paddingTop: '3px',
+                      }}
+                    >
+                      {step.replace(/^Step\s*\d+[:.]\s*/i, '')}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
